@@ -12,13 +12,18 @@ Create the local configuration before starting the service:
 cp .env.example .env
 ```
 
-Then update the upstream LLM/VLM URLs, OSS URL, font file, prompts, and test
-directories in `.env`. Process environment variables override values from the
-file. To load a different file, set `IMAGE_TRANSLATION_ENV_FILE` to its path.
+Then update the upstream LLM/VLM URLs, OSS URL, font file, and test directories
+in `.env`. Process environment variables override values from the file. To load
+a different file, set `IMAGE_TRANSLATION_ENV_FILE` to its path.
 
 Terms that should remain untranslated are maintained in
 `configs/no_translate_terms.json`, grouped by category. Its location is set by
 `NO_TRANSLATE_TERMS_FILE`; changing the terms takes effect after a restart.
+
+LLM/VLM prompt templates use structured JSON under `configs/prompts/`:
+`vision.json` contains recognition prompts, and `translations.json` contains
+all `translate_*` prompts. Set `PROMPTS_DIR` to use a different directory;
+changes take effect after a restart.
 
 Configuration is validated on startup. Missing required URLs, endpoints,
 prompts, or paths raise a `ConfigurationError` with the exact variable name.

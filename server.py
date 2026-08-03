@@ -1,7 +1,7 @@
 # server.py
 import uvicorn
 
-from image_translation.config import get_settings
+from src.image_translation.config import get_settings
 
 if __name__ == "__main__":
     settings = get_settings()

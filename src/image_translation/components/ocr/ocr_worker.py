@@ -5,7 +5,7 @@ import numpy as np
 from paddleocr import PaddleOCR
 
 from clients.call_llm_recognition import call_llm_recognition_api_batch
-from image_translation.config import get_settings
+from src.image_translation.config import get_settings
 
 
 def det_to_ocr_result(image, det_result):
@@ -84,7 +84,7 @@ def has_non_zh_en_text(image):
     """
 
     try:
-        settings = get_settings().llm
+        settings = get_settings()
         # 编码图片
         is_success, buffer = cv2.imencode(".jpg", image)
 
@@ -96,8 +96,8 @@ def has_non_zh_en_text(image):
         # 调用 VLM
         rec_results = call_llm_recognition_api_batch(
             [base64_string],
-            prompt=settings.prompt_language_detection,
-            url=settings.recognition_batch_url,
+            prompt=settings.prompts.language_detection,
+            url=settings.llm.recognition_batch_url,
         )
 
         if not rec_results:

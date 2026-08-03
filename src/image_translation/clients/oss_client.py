@@ -8,7 +8,7 @@ from werkzeug.datastructures import FileStorage
 import os
 from contextlib import asynccontextmanager
 
-from image_translation.config import OssSettings, get_settings
+from src.image_translation.config import OssSettings, get_settings
 
 
 class OSSClient:

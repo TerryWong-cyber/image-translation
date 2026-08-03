@@ -1,25 +1,6 @@
-import re
-from functools import lru_cache
-
 import numpy as np
 
-from image_translation.config import get_settings
-
-
-@lru_cache(maxsize=1)
-def _no_translate_patterns() -> tuple[re.Pattern, re.Pattern]:
-    """Build matching patterns once from the managed term configuration."""
-    terms = get_settings().text_translation.no_translate_terms
-    escaped_terms = "|".join(re.escape(term) for term in terms)
-    remove_units_regex = re.compile(
-        r"(?<![a-zA-Z])(" + escaped_terms + r")\b",
-        flags=re.IGNORECASE,
-    )
-    full_match_unit_pattern = re.compile(
-        r"^\s*[-.0-9,]+\s*(?:" + escaped_terms + r")\s*$",
-        flags=re.IGNORECASE,
-    )
-    return remove_units_regex, full_match_unit_pattern
+from src.image_translation.components.text_filter.translation_filter import should_translate
 
 
 def cal_box_id(box_coordinate):
@@ -64,49 +45,6 @@ def process_ocr_res(ocr_res):
     return o_box_ids, ocr_box_map_text, ocr_box_map_coordinate, ocr_box_map_width_height, ocr_box_map_angle_rad
 
 
-def is_need_translating(text, language="en_zh"):
-    """
-    判断文本是否值得翻译。
-    优化思路：只要字符串中包含至少一个字母（任何语言），就认为它值得翻译。
-    """
-    # 首先处理 None 或空字符串的边缘情况
-    if not text or not text.strip():
-        return False
-
-    remove_units_regex, full_match_unit_pattern = _no_translate_patterns()
-
-    if full_match_unit_pattern.fullmatch(text.strip()):
-        return False
-
-    if remove_units_regex:
-        cleaned_text = remove_units_regex.sub("", text)
-        if not any(c.isalpha() for c in cleaned_text.strip()):
-            return False
-
-    if language == "en_zh":
-        # 它确保我们只计算标准的ASCII字母（a-z, A-Z），而不会误算俄语、希腊语等其他字母。
-        english_letter_count = sum(1 for char in text if char.isascii() and char.isalpha())
-        return english_letter_count >= 2
-
-    elif language == "zh_en":
-        # 只有包含至少一个中文时才会翻译
-        if any('\u4e00' <= char <= '\u9fff' for char in text):
-            return True
-
-    elif language == "any_zh":
-        alphabetic_chars = [char for char in text if char.isalpha()]
-        if not alphabetic_chars:  # 如果没有字母字符
-            return False
-        # 如果所有字母都是中文，则无需翻译
-        if all('\u4e00' <= char <= '\u9fff' for char in alphabetic_chars):
-            return False
-        return True  # 否则，意味着存在非中文字母，需要翻译
-
-    # any() 会在找到第一个True后立即停止，效率很高。
-    # c.isalpha() 可以正确识别包括中文、日文、俄文等在内的所有Unicode字母。
-    return any(c.isalpha() for c in text)
-
-
 def process_and_filter_aggregated_boxes(agg_boxes, ocr_box_map_text, language="en_zh"):
     """
     一个统一处理聚合框的函数。
@@ -133,7 +71,7 @@ def process_and_filter_aggregated_boxes(agg_boxes, ocr_box_map_text, language="e
         aggregated_text = " ".join(filter(None, ocr_texts))
 
         # --- 统一的分类点 ---
-        if is_need_translating(aggregated_text, language=language):
+        if should_translate(aggregated_text, language=language):
             # 放入待翻译字典
             agg_box_map_text_to_translate[agg_box_id] = aggregated_text
         else:

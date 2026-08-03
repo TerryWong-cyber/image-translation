@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from image_translation.config import ConfigurationError, get_settings
+from src.image_translation.config import ConfigurationError, get_settings
 
 
 EXAMPLE_ENV = Path(__file__).resolve().parents[1] / ".env.example"
@@ -29,7 +29,9 @@ class SettingsTest(unittest.TestCase):
             settings.oss.file_url("source", "nested/image.jpg"),
             "http://127.0.0.1:5000/file/source/nested/image.jpg",
         )
-        self.assertTrue(settings.llm.prompt_zh_en.endswith("\n"))
+        self.assertTrue(settings.prompts.translate_zh_en.endswith("\n"))
+        self.assertEqual(settings.prompts.vision_file.name, "vision.json")
+        self.assertEqual(settings.prompts.translations_file.name, "translations.json")
         self.assertIn("mm", settings.text_translation.no_translate_terms)
         self.assertIn("pcb", settings.text_translation.no_translate_terms)
 

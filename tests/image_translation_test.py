@@ -16,8 +16,8 @@ project_root = os.path.dirname(ocr_dir)
 # 将项目根目录添加到 Python 搜索路径的开头
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-from image_translation.config import get_settings
-from image_translation.image_translation import translate_image
+from src.image_translation.config import get_settings
+from src.image_translation.image_translation import translate_image
 from clients.call_llm_recognition import call_llm_recognition_api_batch
 
 

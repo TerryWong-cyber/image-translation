@@ -6,8 +6,8 @@ from PIL import Image, ImageDraw
 from concurrent.futures import ThreadPoolExecutor
 
 from ocr.aggregate import aggregate_ocr_results
-from image_translation.components.font.font_process import cal_box_font_size, get_font
-from image_translation.components.text_box.box_process import (
+from src.image_translation.components.font.font_process import cal_box_font_size, get_font
+from src.image_translation.components.text_box.box_process import (
     process_ocr_res,
     process_and_filter_aggregated_boxes,
 )

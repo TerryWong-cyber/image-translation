@@ -4,7 +4,7 @@ import numpy as np
 from paddleocr import PaddleOCR
 from PIL import Image, ImageDraw
 
-from image_translation.config import get_settings
+from src.image_translation.config import get_settings
 
 
 # 这个函数保持不变

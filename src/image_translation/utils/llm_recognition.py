@@ -3,19 +3,19 @@ import re
 
 import requests
 
-from image_translation.config import get_settings
+from src.image_translation.config import get_settings
 
 
 # deprecated
 def call_llm_recognition_api(
     image_base64, prompt=None, max_new_tokens=None, batch_size=None, timeout=None, url=None
 ):
-    settings = get_settings().llm
-    prompt = prompt or settings.prompt_recognition
-    max_new_tokens = max_new_tokens or settings.max_new_tokens
-    batch_size = batch_size or settings.batch_size
-    timeout = timeout or settings.recognition_timeout_seconds
-    url = url or settings.recognition_url
+    settings = get_settings()
+    prompt = prompt or settings.prompts.recognition
+    max_new_tokens = max_new_tokens or settings.llm.max_new_tokens
+    batch_size = batch_size or settings.llm.batch_size
+    timeout = timeout or settings.llm.recognition_timeout_seconds
+    url = url or settings.llm.recognition_url
     headers = {"Content-Type": "application/json"}
     data = {
         "system_prompt": "",
@@ -39,11 +39,11 @@ def call_llm_recognition_api(
 
 # 新增一个用于批量调用的API函数
 def call_llm_recognition_api_batch(base64_images, prompt=None, max_new_tokens=None, timeout=None, url=None):
-    settings = get_settings().llm
-    prompt = prompt or settings.prompt_recognition
-    max_new_tokens = max_new_tokens or settings.max_new_tokens
-    timeout = timeout or settings.recognition_timeout_seconds
-    url = url or settings.recognition_batch_url
+    settings = get_settings()
+    prompt = prompt or settings.prompts.recognition
+    max_new_tokens = max_new_tokens or settings.llm.max_new_tokens
+    timeout = timeout or settings.llm.recognition_timeout_seconds
+    url = url or settings.llm.recognition_batch_url
     headers = {"Content-Type": "application/json"}
     data = {
         "user_prompt": prompt,

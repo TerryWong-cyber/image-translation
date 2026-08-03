@@ -6,8 +6,8 @@ grouped settings below, which keeps deployment details out of business logic.
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import shlex
 from dataclasses import dataclass
 from functools import lru_cache
@@ -104,10 +104,6 @@ def _bool(env: Mapping[str, str], name: str) -> bool:
     raise ConfigurationError(f"{name} must be a boolean, got {raw!r}")
 
 
-def _prompt(env: Mapping[str, str], name: str) -> str:
-    return _required(env, name).replace("\\n", "\n")
-
-
 def _url(base_url: str, endpoint: str) -> str:
     return urljoin(f"{base_url.rstrip('/')}/", endpoint.lstrip("/"))
 
@@ -169,11 +165,6 @@ class LlmSettings:
     recognition_timeout_seconds: float
     max_new_tokens: int
     batch_size: int
-    prompt_recognition: str
-    prompt_language_detection: str
-    prompt_en_zh: str
-    prompt_zh_en: str
-    prompt_any_zh: str
 
     @property
     def translation_url(self) -> str:
@@ -223,6 +214,18 @@ class TextTranslationSettings:
 
 
 @dataclass(frozen=True)
+class PromptSettings:
+    directory: Path
+    vision_file: Path
+    translations_file: Path
+    recognition: str
+    language_detection: str
+    translate_en_zh: str
+    translate_zh_en: str
+    translate_any_zh: str
+
+
+@dataclass(frozen=True)
 class PathSettings:
     font_file: Path
     test_input_dir: Path
@@ -239,12 +242,20 @@ class Settings:
     oss: OssSettings
     ocr: OcrSettings
     text_translation: TextTranslationSettings
+    prompts: PromptSettings
     paths: PathSettings
 
 
 def _path(env: Mapping[str, str], name: str) -> Path:
     path = Path(_required(env, name)).expanduser()
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _directory(env: Mapping[str, str], name: str) -> Path:
+    path = _path(env, name)
+    if not path.is_dir():
+        raise ConfigurationError(f"{name} is not a directory: {path}")
+    return path
 
 
 def _no_translate_terms(path: Path) -> tuple[str, ...]:
@@ -274,6 +285,45 @@ def _no_translate_terms(path: Path) -> tuple[str, ...]:
     if not terms:
         raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE contains no terms: {path}")
     return tuple(terms)
+
+
+def _prompt_document(directory: Path, filename: str) -> tuple[Path, dict[str, object]]:
+    path = directory / filename
+    if not path.is_file():
+        raise ConfigurationError(f"Prompt file does not exist: {path}")
+    try:
+        content = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"Invalid prompt JSON in {path}: {exc.msg}") from exc
+    if not isinstance(content, dict):
+        raise ConfigurationError(f"Prompt JSON must be an object: {path}")
+    return path, content
+
+
+def _prompt_value(document: dict[str, object], key: str, path: Path) -> str:
+    entry = document.get(key)
+    if not isinstance(entry, dict):
+        raise ConfigurationError(f"Prompt JSON is missing object {key!r}: {path}")
+    prompt = entry.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ConfigurationError(f"Prompt {key!r} must have a non-empty 'prompt' string: {path}")
+    return prompt
+
+
+def _prompt_settings(env: Mapping[str, str]) -> PromptSettings:
+    directory = _directory(env, "PROMPTS_DIR")
+    vision_file, vision_document = _prompt_document(directory, "vision.json")
+    translations_file, translations_document = _prompt_document(directory, "translations.json")
+    return PromptSettings(
+        directory=directory,
+        vision_file=vision_file,
+        translations_file=translations_file,
+        recognition=_prompt_value(vision_document, "recognition", vision_file),
+        language_detection=_prompt_value(vision_document, "language_detection", vision_file),
+        translate_en_zh=_prompt_value(translations_document, "translate_en_zh", translations_file),
+        translate_zh_en=_prompt_value(translations_document, "translate_zh_en", translations_file),
+        translate_any_zh=_prompt_value(translations_document, "translate_any_zh", translations_file),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -309,11 +359,6 @@ def get_settings() -> Settings:
             recognition_timeout_seconds=_float(env, "LLM_RECOGNITION_TIMEOUT_SECONDS"),
             max_new_tokens=_int(env, "LLM_MAX_NEW_TOKENS", minimum=1),
             batch_size=_int(env, "LLM_BATCH_SIZE", minimum=1),
-            prompt_recognition=_prompt(env, "PROMPT_RECOGNITION"),
-            prompt_language_detection=_prompt(env, "PROMPT_LANGUAGE_DETECTION"),
-            prompt_en_zh=_prompt(env, "PROMPT_TRANSLATE_EN_ZH"),
-            prompt_zh_en=_prompt(env, "PROMPT_TRANSLATE_ZH_EN"),
-            prompt_any_zh=_prompt(env, "PROMPT_TRANSLATE_ANY_ZH"),
         ),
         oss=OssSettings(
             base_url=_absolute_url(env, "OSS_BASE_URL"),
@@ -332,6 +377,7 @@ def get_settings() -> Settings:
             no_translate_terms_file=_path(env, "NO_TRANSLATE_TERMS_FILE"),
             no_translate_terms=_no_translate_terms(_path(env, "NO_TRANSLATE_TERMS_FILE")),
         ),
+        prompts=_prompt_settings(env),
         paths=PathSettings(
             font_file=_path(env, "FONT_FILE"),
             test_input_dir=_path(env, "TEST_INPUT_DIR"),
