@@ -1,0 +1,28 @@
+{
+  "categories": {
+    "length_and_dimensions": [
+      "mm", "cm", "m", "km", "um", "mil", "inch", "mils", "u\"", "µ\""
+    ],
+    "mass": ["mg", "g", "kg", "t", "oz"],
+    "volume": ["ml", "L"],
+    "electrical_units": [
+      "v", "mv", "kv", "a", "ma", "ua", "w", "kw", "mw",
+      "ohm", "ohms", "kohm", "mohm", "f", "uf", "nf", "pf",
+      "h", "uh", "nh", "hz", "khz", "mhz", "ghz", "db"
+    ],
+    "physical_and_material_properties": [
+      "pa", "kpa", "mpa", "psi", "n", "kn", "s", "ms", "us", "ns",
+      "dk", "df", "cte", "tg"
+    ],
+    "temperature": ["c", "f", "k", "degc", "degf"],
+    "standards_and_material_grades": [
+      "fr4", "cem-1", "cem-3", "ipc", "ul", "rohs", "weee", "jedec"
+    ],
+    "common_abbreviations": [
+      "pcb", "pth", "npth", "bga", "smd", "smt", "cad", "cam", "aoi",
+      "fab", "assy", "gerber", "bom", "hasl", "imag", "osp", "enig", "smobc"
+    ],
+    "other": ["no", "rev"],
+    "pcb_fixed_terms": ["pad", "Plated", "top", "slot", "round", "rounded", "via"]
+  }
+}

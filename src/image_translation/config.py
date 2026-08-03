@@ -1,0 +1,341 @@
+"""Typed runtime configuration for the image-translation service.
+
+Only this module reads environment variables.  Application code consumes the
+grouped settings below, which keeps deployment details out of business logic.
+"""
+
+from __future__ import annotations
+
+import os
+import json
+import shlex
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+from typing import Mapping
+from urllib.parse import urljoin, urlparse
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+class ConfigurationError(ValueError):
+    """Raised when runtime configuration is missing or invalid."""
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    """Parse the small, portable subset of dotenv syntax used by this project."""
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise ConfigurationError(f"Invalid dotenv entry at {path}:{line_number}")
+
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if not key or not key.replace("_", "").isalnum():
+            raise ConfigurationError(f"Invalid environment variable name at {path}:{line_number}")
+
+        raw_value = raw_value.strip()
+        if not raw_value:
+            values[key] = ""
+            continue
+        try:
+            parsed = shlex.split(raw_value, comments=True, posix=True)
+        except ValueError as exc:
+            raise ConfigurationError(f"Invalid dotenv value at {path}:{line_number}: {exc}") from exc
+        values[key] = " ".join(parsed) if parsed else ""
+    return values
+
+
+def _environment() -> dict[str, str]:
+    env_file = Path(os.environ.get("IMAGE_TRANSLATION_ENV_FILE", PROJECT_ROOT / ".env")).expanduser()
+    values = _parse_env_file(env_file)
+    values.update(os.environ)
+    return values
+
+
+def _required(env: Mapping[str, str], name: str) -> str:
+    value = env.get(name, "").strip()
+    if not value:
+        raise ConfigurationError(
+            f"Missing required setting {name}. Copy .env.example to .env and configure it."
+        )
+    return value
+
+
+def _int(env: Mapping[str, str], name: str, *, minimum: int = 0, maximum: int | None = None) -> int:
+    raw = _required(env, name)
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be an integer, got {raw!r}") from exc
+    if value < minimum:
+        raise ConfigurationError(f"{name} must be >= {minimum}, got {value}")
+    if maximum is not None and value > maximum:
+        raise ConfigurationError(f"{name} must be <= {maximum}, got {value}")
+    return value
+
+
+def _float(env: Mapping[str, str], name: str, *, minimum: float = 0.0) -> float:
+    raw = _required(env, name)
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a number, got {raw!r}") from exc
+    if value < minimum:
+        raise ConfigurationError(f"{name} must be >= {minimum}, got {value}")
+    return value
+
+
+def _bool(env: Mapping[str, str], name: str) -> bool:
+    raw = _required(env, name).lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} must be a boolean, got {raw!r}")
+
+
+def _prompt(env: Mapping[str, str], name: str) -> str:
+    return _required(env, name).replace("\\n", "\n")
+
+
+def _url(base_url: str, endpoint: str) -> str:
+    return urljoin(f"{base_url.rstrip('/')}/", endpoint.lstrip("/"))
+
+
+def _absolute_url(env: Mapping[str, str], name: str) -> str:
+    value = _required(env, name).rstrip("/")
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ConfigurationError(f"{name} must be an absolute HTTP(S) URL, got {value!r}")
+    return value
+
+
+def _route(env: Mapping[str, str], name: str) -> str:
+    value = _required(env, name)
+    if not value.startswith("/"):
+        raise ConfigurationError(f"{name} must start with '/', got {value!r}")
+    return value
+
+
+def _oss_file_route(env: Mapping[str, str], name: str) -> str:
+    value = _route(env, name)
+    missing = {placeholder for placeholder in ("{bucket}", "{key}") if placeholder not in value}
+    if missing:
+        raise ConfigurationError(f"{name} must contain placeholders: {', '.join(sorted(missing))}")
+    return value
+
+
+@dataclass(frozen=True)
+class ServerSettings:
+    app: str
+    host: str
+    port: int
+    reload: bool
+    reload_dirs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ApiSettings:
+    image_translate_path: str
+
+
+@dataclass(frozen=True)
+class HttpSettings:
+    request_timeout_seconds: float
+    max_connections: int
+    max_keepalive_connections: int
+    keepalive_expiry_seconds: float
+
+
+@dataclass(frozen=True)
+class LlmSettings:
+    api_base_url: str
+    legacy_api_base_url: str
+    translation_endpoint: str
+    legacy_inference_endpoint: str
+    recognition_endpoint: str
+    recognition_batch_endpoint: str
+    translation_timeout_seconds: float
+    recognition_timeout_seconds: float
+    max_new_tokens: int
+    batch_size: int
+    prompt_recognition: str
+    prompt_language_detection: str
+    prompt_en_zh: str
+    prompt_zh_en: str
+    prompt_any_zh: str
+
+    @property
+    def translation_url(self) -> str:
+        return _url(self.api_base_url, self.translation_endpoint)
+
+    @property
+    def legacy_inference_url(self) -> str:
+        return _url(self.legacy_api_base_url, self.legacy_inference_endpoint)
+
+    @property
+    def recognition_url(self) -> str:
+        return _url(self.api_base_url, self.recognition_endpoint)
+
+    @property
+    def recognition_batch_url(self) -> str:
+        return _url(self.api_base_url, self.recognition_batch_endpoint)
+
+
+@dataclass(frozen=True)
+class OssSettings:
+    base_url: str
+    upload_endpoint: str
+    file_endpoint: str
+
+    def upload_url(self) -> str:
+        return _url(self.base_url, self.upload_endpoint)
+
+    def file_url(self, bucket_name: str, file_key: str) -> str:
+        endpoint = self.file_endpoint.format(bucket=bucket_name, key=file_key)
+        return _url(self.base_url, endpoint)
+
+
+@dataclass(frozen=True)
+class OcrSettings:
+    language: str
+    use_angle_classifier: bool
+    unclip_ratio: float
+    task_timeout_seconds: float
+    worker_shutdown_timeout_seconds: float
+    box_height_tolerance_ratio: float
+
+
+@dataclass(frozen=True)
+class TextTranslationSettings:
+    no_translate_terms_file: Path
+    no_translate_terms: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PathSettings:
+    font_file: Path
+    test_input_dir: Path
+    test_output_dir: Path
+    test_translation_output_dir: Path
+
+
+@dataclass(frozen=True)
+class Settings:
+    server: ServerSettings
+    api: ApiSettings
+    http: HttpSettings
+    llm: LlmSettings
+    oss: OssSettings
+    ocr: OcrSettings
+    text_translation: TextTranslationSettings
+    paths: PathSettings
+
+
+def _path(env: Mapping[str, str], name: str) -> Path:
+    path = Path(_required(env, name)).expanduser()
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _no_translate_terms(path: Path) -> tuple[str, ...]:
+    if not path.is_file():
+        raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE does not exist: {path}")
+    try:
+        raw_data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"Invalid JSON in NO_TRANSLATE_TERMS_FILE {path}: {exc.msg}") from exc
+
+    categories = raw_data.get("categories") if isinstance(raw_data, dict) else None
+    if not isinstance(categories, dict):
+        raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE must contain a 'categories' object: {path}")
+
+    terms: list[str] = []
+    for category, category_terms in categories.items():
+        if not isinstance(category, str) or not category.strip():
+            raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE has an invalid category name: {path}")
+        if not isinstance(category_terms, list):
+            raise ConfigurationError(f"Category {category!r} must be a list in {path}")
+        for term in category_terms:
+            if not isinstance(term, str) or not term.strip():
+                raise ConfigurationError(f"Category {category!r} contains an invalid term in {path}")
+            if term not in terms:
+                terms.append(term)
+
+    if not terms:
+        raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE contains no terms: {path}")
+    return tuple(terms)
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    env = _environment()
+    return Settings(
+        server=ServerSettings(
+            app=_required(env, "SERVER_APP"),
+            host=_required(env, "SERVER_HOST"),
+            port=_int(env, "SERVER_PORT", minimum=1, maximum=65535),
+            reload=_bool(env, "SERVER_RELOAD"),
+            reload_dirs=tuple(
+                item.strip() for item in _required(env, "SERVER_RELOAD_DIRS").split(",") if item.strip()
+            ),
+        ),
+        api=ApiSettings(
+            image_translate_path=_route(env, "API_IMAGE_TRANSLATE_PATH"),
+        ),
+        http=HttpSettings(
+            request_timeout_seconds=_float(env, "HTTP_REQUEST_TIMEOUT_SECONDS"),
+            max_connections=_int(env, "HTTP_MAX_CONNECTIONS", minimum=1),
+            max_keepalive_connections=_int(env, "HTTP_MAX_KEEPALIVE_CONNECTIONS", minimum=0),
+            keepalive_expiry_seconds=_float(env, "HTTP_KEEPALIVE_EXPIRY_SECONDS"),
+        ),
+        llm=LlmSettings(
+            api_base_url=_absolute_url(env, "LLM_API_BASE_URL"),
+            legacy_api_base_url=_absolute_url(env, "LLM_LEGACY_API_BASE_URL"),
+            translation_endpoint=_route(env, "LLM_TRANSLATION_ENDPOINT"),
+            legacy_inference_endpoint=_route(env, "LLM_LEGACY_INFERENCE_ENDPOINT"),
+            recognition_endpoint=_route(env, "LLM_RECOGNITION_ENDPOINT"),
+            recognition_batch_endpoint=_route(env, "LLM_RECOGNITION_BATCH_ENDPOINT"),
+            translation_timeout_seconds=_float(env, "LLM_TRANSLATION_TIMEOUT_SECONDS"),
+            recognition_timeout_seconds=_float(env, "LLM_RECOGNITION_TIMEOUT_SECONDS"),
+            max_new_tokens=_int(env, "LLM_MAX_NEW_TOKENS", minimum=1),
+            batch_size=_int(env, "LLM_BATCH_SIZE", minimum=1),
+            prompt_recognition=_prompt(env, "PROMPT_RECOGNITION"),
+            prompt_language_detection=_prompt(env, "PROMPT_LANGUAGE_DETECTION"),
+            prompt_en_zh=_prompt(env, "PROMPT_TRANSLATE_EN_ZH"),
+            prompt_zh_en=_prompt(env, "PROMPT_TRANSLATE_ZH_EN"),
+            prompt_any_zh=_prompt(env, "PROMPT_TRANSLATE_ANY_ZH"),
+        ),
+        oss=OssSettings(
+            base_url=_absolute_url(env, "OSS_BASE_URL"),
+            upload_endpoint=_route(env, "OSS_UPLOAD_ENDPOINT"),
+            file_endpoint=_oss_file_route(env, "OSS_FILE_ENDPOINT"),
+        ),
+        ocr=OcrSettings(
+            language=_required(env, "OCR_LANGUAGE"),
+            use_angle_classifier=_bool(env, "OCR_USE_ANGLE_CLASSIFIER"),
+            unclip_ratio=_float(env, "OCR_DET_DB_UNCLIP_RATIO"),
+            task_timeout_seconds=_float(env, "OCR_TASK_TIMEOUT_SECONDS"),
+            worker_shutdown_timeout_seconds=_float(env, "OCR_WORKER_SHUTDOWN_TIMEOUT_SECONDS"),
+            box_height_tolerance_ratio=_float(env, "OCR_BOX_HEIGHT_TOLERANCE_RATIO"),
+        ),
+        text_translation=TextTranslationSettings(
+            no_translate_terms_file=_path(env, "NO_TRANSLATE_TERMS_FILE"),
+            no_translate_terms=_no_translate_terms(_path(env, "NO_TRANSLATE_TERMS_FILE")),
+        ),
+        paths=PathSettings(
+            font_file=_path(env, "FONT_FILE"),
+            test_input_dir=_path(env, "TEST_INPUT_DIR"),
+            test_output_dir=_path(env, "TEST_OUTPUT_DIR"),
+            test_translation_output_dir=_path(env, "TEST_TRANSLATION_OUTPUT_DIR"),
+        ),
+    )
