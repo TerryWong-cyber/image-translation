@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.image_translation.config import ConfigurationError, get_settings
+from image_translation.config import ConfigurationError, get_settings
 
 
 EXAMPLE_ENV = Path(__file__).resolve().parents[1] / ".env.example"

@@ -1,8 +1,8 @@
 import numpy as np
 from PIL import ImageDraw, ImageFont
 from typing import List, Dict, Tuple, Optional
-from src.image_translation.components.text_box.text_format import cal_sentence_char_len
-from src.image_translation.config import get_settings
+from image_translation.components.text_box.text_format import cal_sentence_char_len
+from image_translation.config import get_settings
 
 font_cache = {}  # 字体缓存
 

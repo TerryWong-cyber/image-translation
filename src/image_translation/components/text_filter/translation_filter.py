@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 
-from src.image_translation.config import get_settings
+from image_translation.config import get_settings
 
 
 @lru_cache(maxsize=1)

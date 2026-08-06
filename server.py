@@ -1,7 +1,16 @@
 # server.py
+import sys
+from pathlib import Path
+
 import uvicorn
 
-from src.image_translation.config import get_settings
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from image_translation.config import get_settings
 
 if __name__ == "__main__":
     settings = get_settings()

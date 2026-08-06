@@ -11,11 +11,11 @@ import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from clients.oss_client import oss_client_instance
-from src.image_translation.config import get_settings
-from src.image_translation.image_translation import translate_image
-from src.image_translation.components.ocr.ocr_worker import ocr_worker_process
-from src.image_translation.image_segmentation import segment_image, adjust_box_heights
+from image_translation.clients.oss_client import oss_client_instance
+from image_translation.components.ocr.ocr_worker import ocr_worker_process
+from image_translation.config import get_settings
+from image_translation.image_translation import translate_image
+from image_translation.utils.image_segmentation import adjust_box_heights, segment_image
 
 import logging
 

@@ -1,16 +1,9 @@
-import numpy as np
 import cv2
 import os
 import time
 import numpy as np
 from sklearn.cluster import DBSCAN
 from collections import defaultdict
-
-import sys
-
-sys.path.append('../')
-sys.path.append('../../')
-from ocr.cv_utils import detect_oriented_lines_hough, filter_boxes, filter_boxes_v2
 
 
 def calculate_box_height(box):
@@ -331,9 +324,6 @@ def aggregate_ocr_results(img, image_path, ocr_results, output_path=None, return
         cur_group_height = gap * group_index + min_height
         group_aggregated = aggregate_within_group(group, img, min_height, cur_group_height)
         aggregated_boxes.extend(group_aggregated)
-
-    # aggregated_boxes = filter_boxes(aggregated_boxes)
-    aggregated_boxes = filter_boxes_v2(aggregated_boxes)
 
     output_img = None
     if image_path:

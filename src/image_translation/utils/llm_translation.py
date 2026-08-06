@@ -3,8 +3,8 @@ import re
 
 import requests
 
-from src.image_translation.components.text_box.text_format import split_translated_texts, cal_sentence_char_len
-from src.image_translation.config import get_settings
+from image_translation.components.text_box.text_format import cal_sentence_char_len, split_translated_texts
+from image_translation.config import get_settings
 
 
 def call_inference_api_v2(

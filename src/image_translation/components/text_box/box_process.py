@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.image_translation.components.text_filter.translation_filter import should_translate
+from image_translation.components.text_filter.translation_filter import should_translate
 
 
 def cal_box_id(box_coordinate):

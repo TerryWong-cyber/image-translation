@@ -4,8 +4,8 @@ import base64
 import numpy as np
 from paddleocr import PaddleOCR
 
-from clients.call_llm_recognition import call_llm_recognition_api_batch
-from src.image_translation.config import get_settings
+from image_translation.config import get_settings
+from image_translation.utils.llm_recognition import call_llm_recognition_api_batch
 
 
 def det_to_ocr_result(image, det_result):

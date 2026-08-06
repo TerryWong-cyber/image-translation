@@ -3,8 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.image_translation.components.text_filter.translation_filter import should_translate
-from src.image_translation.config import get_settings
+from image_translation.components.text_filter.translation_filter import should_translate
+from image_translation.config import get_settings
 
 
 EXAMPLE_ENV = Path(__file__).resolve().parents[1] / ".env.example"

@@ -3,7 +3,7 @@ import re
 
 import requests
 
-from src.image_translation.config import get_settings
+from image_translation.config import get_settings
 
 
 # deprecated
