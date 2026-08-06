@@ -24,6 +24,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+
 # PaddlePaddle GPU packages depend on the server's CUDA version and should be
 # installed separately from the matching PaddlePaddle package index.
 cpu = [
@@ -31,6 +32,7 @@ cpu = [
 ]
 dev = [
     "pytest>=8,<10",
+    "pytest-cov>=5,<7",
 ]
 
 [tool.setuptools.packages.find]
