@@ -15,6 +15,11 @@ from image_translation.clients.oss_client import oss_client_instance
 from image_translation.components.ocr.ocr_worker import ocr_worker_process
 from image_translation.config import get_settings
 from image_translation.image_translation import translate_image
+from image_translation.utils.image_encoding import (
+    encode_image,
+    replace_image_extension,
+    resolve_image_encoding,
+)
 from image_translation.utils.image_segmentation import adjust_box_heights, segment_image
 
 import logging
@@ -268,6 +273,11 @@ async def process_image_translate(request: Request):
     # --- 1. 下载图片 ---
     image_data_info = await oss_client_instance.get_oss_file(bucket_name, image_url, as_string=False)
     image_content = image_data_info['content']
+    image_encoding = resolve_image_encoding(
+        image_content,
+        image_url,
+        image_data_info.get('content_type'),
+    )
 
     # --- 2. 执行分片OCR并聚合结果 (调用新函数) ---
     try:
@@ -288,20 +298,23 @@ async def process_image_translate(request: Request):
     res_img, res_msg = await asyncio.to_thread(translate_image, image_obj, ocr_result, language)
 
     # --- 5. 编码并上传 ---
-    def encode_image(img_obj):
-        """一个包裹编码操作的函数"""
+    def encode_result_image(img_obj):
+        """Encode the result using the source image format when supported."""
         print("Encoding image in a thread...")
-        success, buffer = cv2.imencode('.jpg', img_obj)
-        if not success:
-            raise ValueError("Failed to encode image.")
-        return buffer.tobytes()
+        return encode_image(img_obj, image_encoding)
 
-    res_img_bytes = await asyncio.to_thread(encode_image, res_img)
+    res_img_bytes = await asyncio.to_thread(encode_result_image, res_img)
 
     # async with OSS_SEMAPHORE:
     print("Uploading translated image to OSS...")
-    new_image_key = f"{language}_translated_{image_url}"
-    oss_resp = await oss_client_instance.upload_image(save_bucket_name, new_image_key, res_img_bytes)
+    output_image_url = replace_image_extension(image_url, image_encoding.output_extension)
+    new_image_key = f"{language}_translated_{output_image_url}"
+    oss_resp = await oss_client_instance.upload_image(
+        save_bucket_name,
+        new_image_key,
+        res_img_bytes,
+        content_type=image_encoding.content_type,
+    )
     print("Upload response:", oss_resp)
 
     print("res_msg", res_msg)
