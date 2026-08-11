@@ -2,9 +2,11 @@ import time
 import cv2
 import base64
 import numpy as np
+import paddle
 from paddleocr import PaddleOCR
 
 from image_translation.config import get_settings
+from image_translation.components.ocr.device import paddleocr_device_kwargs
 from image_translation.utils.llm_recognition import call_llm_recognition_api_batch
 
 
@@ -127,12 +129,16 @@ def ocr_worker_process(task_queue, result_queue):
     print("[OCR Worker] Process started. Initializing PaddleOCR engine...")
     try:
         settings = get_settings().ocr
+        device_kwargs = paddleocr_device_kwargs(settings, paddle)
+        selected_device = "CPU" if settings.device == "cpu" else f"GPU {settings.gpu_id}"
+        print(f"[OCR Worker] Selected OCR device: {selected_device}")
         # 在工作进程内部初始化，保证资源隔离
         ocr_engine = PaddleOCR(
             lang=settings.language,
             det=True,
             rec=True,
             det_db_unclip_ratio=settings.unclip_ratio,
+            **device_kwargs,
         )
 
         # 针对非中英的外语情况，paddle只负责文字检测，识别部分交给调用LLM的方式来做，所以需要再初始化一个只负责检测的引擎
@@ -141,6 +147,7 @@ def ocr_worker_process(task_queue, result_queue):
             det=True,
             rec=False,
             det_db_unclip_ratio=settings.unclip_ratio,
+            **device_kwargs,
         )
         print("[OCR Worker] PaddleOCR engine initialized successfully.")
     except Exception as e:

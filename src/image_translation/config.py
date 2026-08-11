@@ -12,7 +12,7 @@ import shlex
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Mapping
+from typing import Literal, Mapping, cast
 from urllib.parse import urljoin, urlparse
 
 
@@ -104,6 +104,40 @@ def _bool(env: Mapping[str, str], name: str) -> bool:
     raise ConfigurationError(f"{name} must be a boolean, got {raw!r}")
 
 
+def _optional_bool(env: Mapping[str, str], name: str, default: bool) -> bool:
+    if not env.get(name, "").strip():
+        return default
+    return _bool(env, name)
+
+
+def _optional_int(
+    env: Mapping[str, str],
+    name: str,
+    default: int,
+    *,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int:
+    if not env.get(name, "").strip():
+        return default
+    return _int(env, name, minimum=minimum, maximum=maximum)
+
+
+OcrDevice = Literal["cpu", "gpu"]
+
+
+def _ocr_device(env: Mapping[str, str]) -> OcrDevice:
+    value = env.get("OCR_DEVICE", "cpu").strip().lower() or "cpu"
+    if value not in {"cpu", "gpu"}:
+        raise ConfigurationError(f"OCR_DEVICE must be one of cpu, gpu, got {value!r}")
+    return cast(OcrDevice, value)
+
+
+def _csv(env: Mapping[str, str], name: str, default: str = "") -> tuple[str, ...]:
+    raw = env.get(name, default)
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
 def _url(base_url: str, endpoint: str) -> str:
     return urljoin(f"{base_url.rstrip('/')}/", endpoint.lstrip("/"))
 
@@ -143,6 +177,18 @@ class ServerSettings:
 @dataclass(frozen=True)
 class ApiSettings:
     image_translate_path: str
+
+
+@dataclass(frozen=True)
+class McpSettings:
+    enabled: bool
+    path: str
+    stateless_http: bool
+    json_response: bool
+    allowed_hosts: tuple[str, ...]
+    allowed_origins: tuple[str, ...]
+    max_request_body_size: int
+    max_concurrency: int
 
 
 @dataclass(frozen=True)
@@ -199,6 +245,8 @@ class OssSettings:
 
 @dataclass(frozen=True)
 class OcrSettings:
+    device: OcrDevice
+    gpu_id: int
     language: str
     use_angle_classifier: bool
     unclip_ratio: float
@@ -237,6 +285,7 @@ class PathSettings:
 class Settings:
     server: ServerSettings
     api: ApiSettings
+    mcp: McpSettings
     http: HttpSettings
     llm: LlmSettings
     oss: OssSettings
@@ -249,6 +298,16 @@ class Settings:
 def _path(env: Mapping[str, str], name: str) -> Path:
     path = Path(_required(env, name)).expanduser()
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _mcp_path(env: Mapping[str, str]) -> str:
+    value = env.get("MCP_PATH", "/mcp").strip() or "/mcp"
+    if not value.startswith("/"):
+        raise ConfigurationError(f"MCP_PATH must start with '/', got {value!r}")
+    normalized = value.rstrip("/") or "/"
+    if normalized == "/":
+        raise ConfigurationError("MCP_PATH cannot be '/', because it would shadow the REST API")
+    return normalized
 
 
 def _directory(env: Mapping[str, str], name: str) -> Path:
@@ -342,6 +401,38 @@ def get_settings() -> Settings:
         api=ApiSettings(
             image_translate_path=_route(env, "API_IMAGE_TRANSLATE_PATH"),
         ),
+        mcp=McpSettings(
+            enabled=_optional_bool(env, "MCP_ENABLED", True),
+            path=_mcp_path(env),
+            stateless_http=_optional_bool(env, "MCP_STATELESS_HTTP", True),
+            json_response=_optional_bool(env, "MCP_JSON_RESPONSE", True),
+            allowed_hosts=_csv(
+                env,
+                "MCP_ALLOWED_HOSTS",
+                "127.0.0.1,127.0.0.1:*,localhost,localhost:*,[::1],[::1]:*",
+            ),
+            allowed_origins=_csv(
+                env,
+                "MCP_ALLOWED_ORIGINS",
+                (
+                    "http://127.0.0.1,http://127.0.0.1:*,"
+                    "http://localhost,http://localhost:*,"
+                    "http://[::1],http://[::1]:*"
+                ),
+            ),
+            max_request_body_size=_optional_int(
+                env,
+                "MCP_MAX_REQUEST_BODY_SIZE",
+                1024 * 1024,
+                minimum=1024,
+            ),
+            max_concurrency=_optional_int(
+                env,
+                "MCP_MAX_CONCURRENCY",
+                2,
+                minimum=1,
+            ),
+        ),
         http=HttpSettings(
             request_timeout_seconds=_float(env, "HTTP_REQUEST_TIMEOUT_SECONDS"),
             max_connections=_int(env, "HTTP_MAX_CONNECTIONS", minimum=1),
@@ -366,6 +457,8 @@ def get_settings() -> Settings:
             file_endpoint=_oss_file_route(env, "OSS_FILE_ENDPOINT"),
         ),
         ocr=OcrSettings(
+            device=_ocr_device(env),
+            gpu_id=_optional_int(env, "OCR_GPU_ID", 0, minimum=0),
             language=_required(env, "OCR_LANGUAGE"),
             use_angle_classifier=_bool(env, "OCR_USE_ANGLE_CLASSIFIER"),
             unclip_ratio=_float(env, "OCR_DET_DB_UNCLIP_RATIO"),

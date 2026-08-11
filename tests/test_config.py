@@ -21,6 +21,14 @@ class SettingsTest(unittest.TestCase):
 
         self.assertEqual(settings.server.port, 8000)
         self.assertTrue(settings.server.reload)
+        self.assertTrue(settings.mcp.enabled)
+        self.assertEqual(settings.mcp.path, "/mcp")
+        self.assertTrue(settings.mcp.stateless_http)
+        self.assertEqual(settings.mcp.max_concurrency, 2)
+        self.assertIn("localhost", settings.mcp.allowed_hosts)
+        self.assertIn("localhost:*", settings.mcp.allowed_hosts)
+        self.assertEqual(settings.ocr.device, "cpu")
+        self.assertEqual(settings.ocr.gpu_id, 0)
         self.assertEqual(
             settings.llm.translation_url,
             "http://127.0.0.1:5051/api/inference/qwen_translate",
@@ -47,6 +55,53 @@ class SettingsTest(unittest.TestCase):
 
         self.assertEqual(settings.server.port, 9123)
         self.assertFalse(settings.server.reload)
+
+    def test_ocr_device_can_be_selected_from_environment(self):
+        env = {
+            "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),
+            "OCR_DEVICE": "GPU",
+            "OCR_GPU_ID": "2",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            get_settings.cache_clear()
+            settings = get_settings()
+
+        self.assertEqual(settings.ocr.device, "gpu")
+        self.assertEqual(settings.ocr.gpu_id, 2)
+
+    def test_invalid_ocr_device_fails_fast(self):
+        env = {
+            "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),
+            "OCR_DEVICE": "auto",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            get_settings.cache_clear()
+            with self.assertRaisesRegex(ConfigurationError, "OCR_DEVICE"):
+                get_settings()
+
+    def test_optional_runtime_defaults_keep_existing_env_files_compatible(self):
+        legacy_content = "\n".join(
+            line
+            for line in EXAMPLE_ENV.read_text(encoding="utf-8").splitlines()
+            if not line.startswith("MCP_")
+            and not line.startswith(("OCR_DEVICE=", "OCR_GPU_ID="))
+        )
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:
+            env_file.write(legacy_content)
+            env_file.flush()
+            with patch.dict(
+                os.environ,
+                {"IMAGE_TRANSLATION_ENV_FILE": env_file.name},
+                clear=True,
+            ):
+                get_settings.cache_clear()
+                settings = get_settings()
+
+        self.assertTrue(settings.mcp.enabled)
+        self.assertEqual(settings.mcp.path, "/mcp")
+        self.assertEqual(settings.mcp.max_request_body_size, 1024 * 1024)
+        self.assertEqual(settings.ocr.device, "cpu")
+        self.assertEqual(settings.ocr.gpu_id, 0)
 
     def test_missing_required_setting_fails_fast(self):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:
