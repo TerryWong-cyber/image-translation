@@ -91,6 +91,88 @@ Start the service from the repository root:
 python server.py
 ```
 
+## Production GPU container
+
+`Dockerfile.gpu` is the production image. It installs PaddlePaddle GPU 3.3.0
+for CUDA 13, installs the application without development dependencies, and
+downloads these fixed models while the image is built:
+
+```text
+PP-LCNet_x1_0_textline_ori
+PP-OCRv4_mobile_det
+en_PP-OCRv4_mobile_rec
+```
+
+The models are stored inside the image under
+`/opt/paddlex-cache/official_models`. The build also writes
+`/opt/paddlex-cache/models.sha256.json`, containing the size and SHA-256 digest
+of every model file. Production startup does not download models.
+
+Prepare the production configuration:
+
+```bash
+cp .env.production.example .env.production
+```
+
+Update the LLM/VLM and OSS URLs, public MCP hostname/origins, and choose the
+physical GPU exposed to the container:
+
+```bash
+export NVIDIA_VISIBLE_DEVICES=0
+```
+
+Build and start locally:
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+docker compose logs -f image-translation
+```
+
+Verify liveness and OCR readiness:
+
+```bash
+curl --fail http://127.0.0.1:8000/health/live
+curl --fail http://127.0.0.1:8000/health/ready
+```
+
+For repeatable deployment, build the image once in CI, push it to a private
+registry, and let production hosts pull that immutable image:
+
+```bash
+export IMAGE_TRANSLATION_IMAGE=registry.example.com/image-translation:0.1.0-gpu-cu130
+docker compose build
+docker compose push
+
+# On a production host with .env.production already configured:
+docker compose pull
+docker compose up -d
+```
+
+The host needs a compatible NVIDIA driver, Docker Engine, Docker Compose, and
+NVIDIA Container Toolkit. It does not need Conda, PaddleOCR, PaddlePaddle, or
+the model files installed separately.
+
+`OCR_REQUIRE_LOCAL_MODELS=true` makes the container fail before OCR starts if
+one of the configured model directories is missing. The application passes
+the following explicit paths to PaddleOCR instead of relying on a user-home
+cache:
+
+```dotenv
+OCR_TEXTLINE_MODEL_DIR=/opt/paddlex-cache/official_models/PP-LCNet_x1_0_textline_ori
+OCR_DETECTION_MODEL_DIR=/opt/paddlex-cache/official_models/PP-OCRv4_mobile_det
+OCR_RECOGNITION_MODEL_DIR=/opt/paddlex-cache/official_models/en_PP-OCRv4_mobile_rec
+```
+
+The model artifacts are small compared with the GPU runtime. Most image size
+comes from PaddlePaddle GPU and its CUDA, cuDNN, cuBLAS, and cuFFT libraries.
+Use registry and Docker layer caching rather than installing these packages on
+every production start.
+
+The existing `Dockerfile` remains a lightweight development shell. Use
+`Dockerfile.gpu` or `docker-compose.yml` for production.
+
 ## MCP access
 
 The same process exposes the legacy REST endpoint and an MCP Streamable HTTP

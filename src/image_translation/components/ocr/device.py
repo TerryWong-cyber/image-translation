@@ -31,9 +31,7 @@ def paddleocr_device(settings: OcrSettings, paddle: Any) -> str:
 
 def paddleocr_init_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, Any]:
     """Return the explicit PaddleOCR 3.x pipeline configuration."""
-    return {
-        "lang": settings.language,
-        "ocr_version": settings.version,
+    kwargs: dict[str, Any] = {
         "device": paddleocr_device(settings, paddle),
         "engine": "paddle",
         "use_doc_orientation_classify": False,
@@ -41,3 +39,15 @@ def paddleocr_init_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, Any]:
         "use_textline_orientation": settings.use_angle_classifier,
         "text_det_unclip_ratio": settings.unclip_ratio,
     }
+    if settings.detection_model_dir is None:
+        kwargs.update(lang=settings.language, ocr_version=settings.version)
+    else:
+        kwargs.update(
+            text_detection_model_dir=str(settings.detection_model_dir),
+            text_recognition_model_dir=str(settings.recognition_model_dir),
+        )
+    if settings.textline_orientation_model_dir is not None:
+        kwargs["textline_orientation_model_dir"] = str(
+            settings.textline_orientation_model_dir
+        )
+    return kwargs

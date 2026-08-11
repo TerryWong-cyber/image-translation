@@ -1,0 +1,32 @@
+services:
+  image-translation:
+    image: ${IMAGE_TRANSLATION_IMAGE:-image-translation:gpu-cu130}
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+      args:
+        PADDLE_VERSION: ${PADDLE_VERSION:-3.3.0}
+        PADDLE_INDEX_URL: ${PADDLE_INDEX_URL:-https://www.paddlepaddle.org.cn/packages/stable/cu130/}
+    init: true
+    restart: unless-stopped
+    env_file:
+      - ${IMAGE_TRANSLATION_COMPOSE_ENV_FILE:-.env.production}
+    environment:
+      PADDLE_PDX_CACHE_HOME: /opt/paddlex-cache
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    gpus: all
+    ports:
+      - "${IMAGE_TRANSLATION_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    shm_size: "2gb"
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"

@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
 from image_translation.components.ocr.device import (
@@ -19,6 +20,10 @@ def _settings(device: OcrDevice, gpu_id: int = 0) -> OcrSettings:
         task_timeout_seconds=180,
         worker_shutdown_timeout_seconds=5,
         box_height_tolerance_ratio=0.7,
+        require_local_models=False,
+        textline_orientation_model_dir=None,
+        detection_model_dir=None,
+        recognition_model_dir=None,
     )
 
 
@@ -55,6 +60,28 @@ class PaddleOcrDeviceTest(unittest.TestCase):
         self.assertNotIn("use_gpu", kwargs)
         self.assertNotIn("gpu_id", kwargs)
         self.assertNotIn("det_db_unclip_ratio", kwargs)
+
+    def test_init_kwargs_use_explicit_local_model_directories(self):
+        settings = _settings("cpu")
+        settings = OcrSettings(
+            **{
+                **settings.__dict__,
+                "textline_orientation_model_dir": Path("/models/orientation"),
+                "detection_model_dir": Path("/models/detection"),
+                "recognition_model_dir": Path("/models/recognition"),
+            }
+        )
+
+        kwargs = paddleocr_init_kwargs(settings, SimpleNamespace(device=None))
+
+        self.assertEqual(kwargs["text_detection_model_dir"], "/models/detection")
+        self.assertEqual(kwargs["text_recognition_model_dir"], "/models/recognition")
+        self.assertEqual(
+            kwargs["textline_orientation_model_dir"],
+            "/models/orientation",
+        )
+        self.assertNotIn("lang", kwargs)
+        self.assertNotIn("ocr_version", kwargs)
 
     def test_gpu_requires_cuda_runtime(self):
         with self.assertRaisesRegex(RuntimeError, "not compiled with CUDA"):

@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.10-slim-bookworm
+
+ARG PADDLE_VERSION=3.3.0
+ARG PADDLE_INDEX_URL=https://www.paddlepaddle.org.cn/packages/stable/cu130/
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PADDLE_PDX_CACHE_HOME=/opt/paddlex-cache \
+    PADDLE_PDX_MODEL_SOURCE=modelscope \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        fonts-noto-cjk \
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1 \
+        libsm6 \
+        libxext6 \
+        libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md server.py ./
+COPY src ./src
+COPY configs ./configs
+COPY scripts ./scripts
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --upgrade pip \
+    && python -m pip install \
+        "paddlepaddle-gpu==${PADDLE_VERSION}" \
+        --extra-index-url "${PADDLE_INDEX_URL}" \
+    && python -m pip install ".[gpu]" \
+    && python -m pip check
+
+# Model downloads happen at image-build time. Runtime can start without access
+# to Hugging Face, AIStudio, ModelScope, or BOS.
+RUN python scripts/prefetch_paddle_models.py \
+        --cache-home "${PADDLE_PDX_CACHE_HOME}" \
+        --language en \
+        --ocr-version PP-OCRv4 \
+        --model-source modelscope \
+        --use-textline-orientation \
+    && python scripts/verify_paddle_models.py \
+        --root "${PADDLE_PDX_CACHE_HOME}" \
+        --model-dir official_models/PP-LCNet_x1_0_textline_ori \
+        --model-dir official_models/PP-OCRv4_mobile_det \
+        --model-dir official_models/en_PP-OCRv4_mobile_rec \
+        --write-manifest "${PADDLE_PDX_CACHE_HOME}/models.sha256.json"
+
+RUN useradd --create-home --uid 10001 app \
+    && chown -R app:app /app "${PADDLE_PDX_CACHE_HOME}"
+
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)" || exit 1
+
+ENTRYPOINT ["/bin/sh", "/app/scripts/container_entrypoint.sh"]
+CMD ["python", "server.py"]

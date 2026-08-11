@@ -9,4 +9,5 @@ build/
 *.egg-info/
 .idea/
 .env
+.env.production
 *.DS_Store

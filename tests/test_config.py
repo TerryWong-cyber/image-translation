@@ -30,6 +30,8 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.ocr.device, "cpu")
         self.assertEqual(settings.ocr.gpu_id, 0)
         self.assertEqual(settings.ocr.version, "PP-OCRv4")
+        self.assertFalse(settings.ocr.require_local_models)
+        self.assertIsNone(settings.ocr.detection_model_dir)
         self.assertEqual(
             settings.llm.translation_url,
             "http://127.0.0.1:5051/api/inference/qwen_translate",
@@ -90,12 +92,66 @@ class SettingsTest(unittest.TestCase):
             with self.assertRaisesRegex(ConfigurationError, "OCR_VERSION"):
                 get_settings()
 
+    def test_local_ocr_model_directories_are_validated(self):
+        with tempfile.TemporaryDirectory() as model_root:
+            root = Path(model_root)
+            orientation = root / "orientation"
+            detection = root / "detection"
+            recognition = root / "recognition"
+            for path in (orientation, detection, recognition):
+                path.mkdir()
+            env = {
+                "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),
+                "OCR_REQUIRE_LOCAL_MODELS": "true",
+                "OCR_TEXTLINE_MODEL_DIR": str(orientation),
+                "OCR_DETECTION_MODEL_DIR": str(detection),
+                "OCR_RECOGNITION_MODEL_DIR": str(recognition),
+            }
+            with patch.dict(os.environ, env, clear=True):
+                get_settings.cache_clear()
+                settings = get_settings()
+
+        self.assertTrue(settings.ocr.require_local_models)
+        self.assertEqual(settings.ocr.detection_model_dir, detection)
+        self.assertEqual(settings.ocr.recognition_model_dir, recognition)
+
+    def test_required_local_ocr_models_fail_fast_when_missing(self):
+        env = {
+            "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),
+            "OCR_REQUIRE_LOCAL_MODELS": "true",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            get_settings.cache_clear()
+            with self.assertRaisesRegex(ConfigurationError, "OCR_DETECTION_MODEL_DIR"):
+                get_settings()
+
+    def test_detection_and_recognition_model_dirs_are_atomic(self):
+        with tempfile.TemporaryDirectory() as model_root:
+            env = {
+                "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),
+                "OCR_DETECTION_MODEL_DIR": model_root,
+            }
+            with patch.dict(os.environ, env, clear=True):
+                get_settings.cache_clear()
+                with self.assertRaisesRegex(ConfigurationError, "configured together"):
+                    get_settings()
+
     def test_optional_runtime_defaults_keep_existing_env_files_compatible(self):
         legacy_content = "\n".join(
             line
             for line in EXAMPLE_ENV.read_text(encoding="utf-8").splitlines()
             if not line.startswith("MCP_")
-            and not line.startswith(("OCR_DEVICE=", "OCR_GPU_ID=", "OCR_VERSION="))
+            and not line.startswith(
+                (
+                    "OCR_DEVICE=",
+                    "OCR_GPU_ID=",
+                    "OCR_VERSION=",
+                    "OCR_REQUIRE_LOCAL_MODELS=",
+                    "OCR_TEXTLINE_MODEL_DIR=",
+                    "OCR_DETECTION_MODEL_DIR=",
+                    "OCR_RECOGNITION_MODEL_DIR=",
+                )
+            )
         )
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:
             env_file.write(legacy_content)

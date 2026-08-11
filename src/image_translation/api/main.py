@@ -71,6 +71,7 @@ async def lifespan(app: FastAPI):
 
     try:
         await ocr_runtime.start()
+        app.state.ocr_runtime = ocr_runtime
         translation_service = ImageTranslationService(
             oss_client=oss_client_instance,
             ocr_service=ocr_runtime,
@@ -87,12 +88,35 @@ async def lifespan(app: FastAPI):
         service_registry.clear()
         if hasattr(app.state, "translation_service"):
             del app.state.translation_service
+        if hasattr(app.state, "ocr_runtime"):
+            del app.state.ocr_runtime
         await oss_client_instance.close_shared_client()
         await ocr_runtime.close()
         logger.info("Image translation service stopped")
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/health/live", include_in_schema=False)
+async def health_live():
+    """Process liveness endpoint for container supervision."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", include_in_schema=False)
+async def health_ready(request: Request):
+    """Report ready only while the shared service and OCR worker are alive."""
+    runtime = getattr(request.app.state, "ocr_runtime", None)
+    service = getattr(request.app.state, "translation_service", None)
+    if runtime is None or service is None or not runtime.is_started:
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
+    return {
+        "status": "ready",
+        "ocr_device": settings.ocr.device,
+        "ocr_gpu_id": settings.ocr.gpu_id if settings.ocr.device == "gpu" else None,
+        "ocr_version": settings.ocr.version,
+    }
 
 
 @app.post(settings.api.image_translate_path)

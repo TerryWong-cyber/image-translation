@@ -264,6 +264,10 @@ class OcrSettings:
     task_timeout_seconds: float
     worker_shutdown_timeout_seconds: float
     box_height_tolerance_ratio: float
+    require_local_models: bool
+    textline_orientation_model_dir: Path | None
+    detection_model_dir: Path | None
+    recognition_model_dir: Path | None
 
 
 @dataclass(frozen=True)
@@ -309,6 +313,17 @@ class Settings:
 def _path(env: Mapping[str, str], name: str) -> Path:
     path = Path(_required(env, name)).expanduser()
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _optional_directory(env: Mapping[str, str], name: str) -> Path | None:
+    raw = env.get(name, "").strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    path = path if path.is_absolute() else PROJECT_ROOT / path
+    if not path.is_dir():
+        raise ConfigurationError(f"{name} directory does not exist: {path}")
+    return path
 
 
 def _mcp_path(env: Mapping[str, str]) -> str:
@@ -396,6 +411,47 @@ def _prompt_settings(env: Mapping[str, str]) -> PromptSettings:
     )
 
 
+def _ocr_settings(env: Mapping[str, str]) -> OcrSettings:
+    use_angle_classifier = _bool(env, "OCR_USE_ANGLE_CLASSIFIER")
+    require_local_models = _optional_bool(env, "OCR_REQUIRE_LOCAL_MODELS", False)
+    orientation_dir = _optional_directory(env, "OCR_TEXTLINE_MODEL_DIR")
+    detection_dir = _optional_directory(env, "OCR_DETECTION_MODEL_DIR")
+    recognition_dir = _optional_directory(env, "OCR_RECOGNITION_MODEL_DIR")
+
+    if (detection_dir is None) != (recognition_dir is None):
+        raise ConfigurationError(
+            "OCR_DETECTION_MODEL_DIR and OCR_RECOGNITION_MODEL_DIR must be configured together"
+        )
+    if require_local_models:
+        missing = []
+        if detection_dir is None:
+            missing.append("OCR_DETECTION_MODEL_DIR")
+        if recognition_dir is None:
+            missing.append("OCR_RECOGNITION_MODEL_DIR")
+        if use_angle_classifier and orientation_dir is None:
+            missing.append("OCR_TEXTLINE_MODEL_DIR")
+        if missing:
+            raise ConfigurationError(
+                "OCR_REQUIRE_LOCAL_MODELS=true requires: " + ", ".join(missing)
+            )
+
+    return OcrSettings(
+        device=_ocr_device(env),
+        gpu_id=_optional_int(env, "OCR_GPU_ID", 0, minimum=0),
+        language=_required(env, "OCR_LANGUAGE"),
+        version=_ocr_version(env),
+        use_angle_classifier=use_angle_classifier,
+        unclip_ratio=_float(env, "OCR_DET_DB_UNCLIP_RATIO"),
+        task_timeout_seconds=_float(env, "OCR_TASK_TIMEOUT_SECONDS"),
+        worker_shutdown_timeout_seconds=_float(env, "OCR_WORKER_SHUTDOWN_TIMEOUT_SECONDS"),
+        box_height_tolerance_ratio=_float(env, "OCR_BOX_HEIGHT_TOLERANCE_RATIO"),
+        require_local_models=require_local_models,
+        textline_orientation_model_dir=orientation_dir,
+        detection_model_dir=detection_dir,
+        recognition_model_dir=recognition_dir,
+    )
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     env = _environment()
@@ -467,17 +523,7 @@ def get_settings() -> Settings:
             upload_endpoint=_route(env, "OSS_UPLOAD_ENDPOINT"),
             file_endpoint=_oss_file_route(env, "OSS_FILE_ENDPOINT"),
         ),
-        ocr=OcrSettings(
-            device=_ocr_device(env),
-            gpu_id=_optional_int(env, "OCR_GPU_ID", 0, minimum=0),
-            language=_required(env, "OCR_LANGUAGE"),
-            version=_ocr_version(env),
-            use_angle_classifier=_bool(env, "OCR_USE_ANGLE_CLASSIFIER"),
-            unclip_ratio=_float(env, "OCR_DET_DB_UNCLIP_RATIO"),
-            task_timeout_seconds=_float(env, "OCR_TASK_TIMEOUT_SECONDS"),
-            worker_shutdown_timeout_seconds=_float(env, "OCR_WORKER_SHUTDOWN_TIMEOUT_SECONDS"),
-            box_height_tolerance_ratio=_float(env, "OCR_BOX_HEIGHT_TOLERANCE_RATIO"),
-        ),
+        ocr=_ocr_settings(env),
         text_translation=TextTranslationSettings(
             no_translate_terms_file=_path(env, "NO_TRANSLATE_TERMS_FILE"),
             no_translate_terms=_no_translate_terms(_path(env, "NO_TRANSLATE_TERMS_FILE")),
