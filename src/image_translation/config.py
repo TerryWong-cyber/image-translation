@@ -124,6 +124,7 @@ def _optional_int(
 
 
 OcrDevice = Literal["cpu", "gpu"]
+OcrVersion = Literal["PP-OCRv3", "PP-OCRv4", "PP-OCRv5", "PP-OCRv6"]
 
 
 def _ocr_device(env: Mapping[str, str]) -> OcrDevice:
@@ -131,6 +132,15 @@ def _ocr_device(env: Mapping[str, str]) -> OcrDevice:
     if value not in {"cpu", "gpu"}:
         raise ConfigurationError(f"OCR_DEVICE must be one of cpu, gpu, got {value!r}")
     return cast(OcrDevice, value)
+
+
+def _ocr_version(env: Mapping[str, str]) -> OcrVersion:
+    value = env.get("OCR_VERSION", "PP-OCRv4").strip() or "PP-OCRv4"
+    choices = {"PP-OCRv3", "PP-OCRv4", "PP-OCRv5", "PP-OCRv6"}
+    if value not in choices:
+        expected = ", ".join(sorted(choices))
+        raise ConfigurationError(f"OCR_VERSION must be one of {expected}, got {value!r}")
+    return cast(OcrVersion, value)
 
 
 def _csv(env: Mapping[str, str], name: str, default: str = "") -> tuple[str, ...]:
@@ -248,6 +258,7 @@ class OcrSettings:
     device: OcrDevice
     gpu_id: int
     language: str
+    version: OcrVersion
     use_angle_classifier: bool
     unclip_ratio: float
     task_timeout_seconds: float
@@ -460,6 +471,7 @@ def get_settings() -> Settings:
             device=_ocr_device(env),
             gpu_id=_optional_int(env, "OCR_GPU_ID", 0, minimum=0),
             language=_required(env, "OCR_LANGUAGE"),
+            version=_ocr_version(env),
             use_angle_classifier=_bool(env, "OCR_USE_ANGLE_CLASSIFIER"),
             unclip_ratio=_float(env, "OCR_DET_DB_UNCLIP_RATIO"),
             task_timeout_seconds=_float(env, "OCR_TASK_TIMEOUT_SECONDS"),

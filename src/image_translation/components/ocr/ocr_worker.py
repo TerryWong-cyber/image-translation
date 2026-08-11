@@ -6,23 +6,26 @@ import paddle
 from paddleocr import PaddleOCR
 
 from image_translation.config import get_settings
-from image_translation.components.ocr.device import paddleocr_device_kwargs
+from image_translation.components.ocr.device import paddleocr_init_kwargs
+from image_translation.components.ocr.paddleocr3_adapter import (
+    paddleocr_detection_boxes,
+    paddleocr_results_to_legacy,
+)
 from image_translation.utils.llm_recognition import call_llm_recognition_api_batch
 
 
-def det_to_ocr_result(image, det_result):
+def det_to_ocr_result(image, boxes):
     st = time.time()
 
     if image is None:
         print(f"错误: 传入的图像对象为 None。")
         return []
 
-    if not det_result or not det_result[0]:
+    if not boxes:
         print("警告: 检测结果为空，无法进行裁切。")
-        return []
+        return [[]]
 
-    boxes = det_result[0]
-    base64_images = []  # 用于存储所有裁切图的base64编码
+    crops = []  # 用于存储有效裁切框及其base64编码
 
     # 1. 先循环准备好所有图片数据
     for i, box in enumerate(boxes):
@@ -52,23 +55,23 @@ def det_to_ocr_result(image, det_result):
             continue
 
         base64_string = base64.b64encode(buffer).decode('utf-8')
-        base64_images.append(base64_string)
+        crops.append((box, base64_string))
 
-    if not base64_images:
+    if not crops:
         print("没有可识别的图像区域。")
-        return []
+        return [[]]
 
     # 2. 一次性发送所有图片进行识别 (这部分逻辑不变)
-    print(f"--- 准备发送 {len(base64_images)} 个图像进行批量识别 ---")
-    rec_results = call_llm_recognition_api_batch(base64_images)
+    print(f"--- 准备发送 {len(crops)} 个图像进行批量识别 ---")
+    rec_results = call_llm_recognition_api_batch([base64_image for _, base64_image in crops])
 
-    if not rec_results or len(rec_results) != len(boxes):
+    if not rec_results or len(rec_results) != len(crops):
         print("错误: 批量识别返回结果数量与请求不匹配或返回为空。")
-        return []
+        return [[]]
 
     # 3. 将识别结果与原始box对应起来 (这部分逻辑不变)
     ocr_result = []
-    for box, rec_text in zip(boxes, rec_results):
+    for (box, _), rec_text in zip(crops, rec_results):
         ocr_result.append([box, (rec_text, 0.99)])  # 假设置信度为0.99
 
     print(f"提取文字总耗时: {time.time() - st:.4f}s")
@@ -129,26 +132,14 @@ def ocr_worker_process(task_queue, result_queue):
     print("[OCR Worker] Process started. Initializing PaddleOCR engine...")
     try:
         settings = get_settings().ocr
-        device_kwargs = paddleocr_device_kwargs(settings, paddle)
+        init_kwargs = paddleocr_init_kwargs(settings, paddle)
         selected_device = "CPU" if settings.device == "cpu" else f"GPU {settings.gpu_id}"
-        print(f"[OCR Worker] Selected OCR device: {selected_device}")
+        print(
+            f"[OCR Worker] Selected OCR device: {selected_device}; "
+            f"model version: {settings.version}"
+        )
         # 在工作进程内部初始化，保证资源隔离
-        ocr_engine = PaddleOCR(
-            lang=settings.language,
-            det=True,
-            rec=True,
-            det_db_unclip_ratio=settings.unclip_ratio,
-            **device_kwargs,
-        )
-
-        # 针对非中英的外语情况，paddle只负责文字检测，识别部分交给调用LLM的方式来做，所以需要再初始化一个只负责检测的引擎
-        det_engine = PaddleOCR(
-            lang=settings.language,
-            det=True,
-            rec=False,
-            det_db_unclip_ratio=settings.unclip_ratio,
-            **device_kwargs,
-        )
+        ocr_engine = PaddleOCR(**init_kwargs)
         print("[OCR Worker] PaddleOCR engine initialized successfully.")
     except Exception as e:
         print(f"[OCR Worker] FATAL: Failed to initialize PaddleOCR engine: {e}")
@@ -181,16 +172,16 @@ def ocr_worker_process(task_queue, result_queue):
 
             start_time = time.time()
 
-            ocr_result = None
             has, err_msg = has_non_zh_en_text(image=img)
             if err_msg and err_msg != "":
                 print(f"[OCR Worker] Warning: Error during language check: {err_msg}. Defaulting to standard OCR.")
 
+            prediction_results = ocr_engine.predict(img)
             if has:
-                det_result = det_engine.ocr(img, cls=settings.use_angle_classifier, rec=False)
-                ocr_result = det_to_ocr_result(img, det_result)
+                detection_boxes = paddleocr_detection_boxes(prediction_results)
+                ocr_result = det_to_ocr_result(img, detection_boxes)
             else:
-                ocr_result = ocr_engine.ocr(img, cls=settings.use_angle_classifier)
+                ocr_result = paddleocr_results_to_legacy(prediction_results)
 
             elapsed = time.time() - start_time
             print(f"[OCR Worker] Task {task_id} OCR finished in {elapsed:.2f}s.")

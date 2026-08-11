@@ -25,8 +25,15 @@ For a CPU-only OCR environment, include the optional PaddlePaddle runtime:
 python -m pip install -e '.[cpu,dev]'
 ```
 
-GPU deployments should install the `paddlepaddle-gpu` build matching the
-server's CUDA version separately instead of using the `cpu` extra.
+GPU deployments should install PaddlePaddle GPU separately instead of using
+the `cpu` extra. For the Blackwell server with a CUDA 13-capable driver:
+
+```bash
+python -m pip install paddlepaddle-gpu==3.3.0 \
+  -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
+python -m pip install -e '.[gpu,dev]'
+python -m pip check
+```
 
 Select the OCR device explicitly in `.env`:
 
@@ -34,19 +41,25 @@ Select the OCR device explicitly in `.env`:
 # Safe default, including environments with the CPU PaddlePaddle wheel
 OCR_DEVICE=cpu
 OCR_GPU_ID=0
+OCR_VERSION=PP-OCRv4
 ```
 
-Set `OCR_DEVICE=gpu` on a GPU deployment. `OCR_GPU_ID` is zero-based and is
-used by both PaddleOCR engines. Startup fails immediately if the installed
-PaddlePaddle runtime has no CUDA support or the requested GPU does not exist;
-it never silently falls back to CPU. The environment variable selects a device
-but does not replace the installed runtime, so GPU mode still requires a
-CUDA-compatible `paddlepaddle-gpu` package.
+Set `OCR_DEVICE=gpu` on a GPU deployment. `OCR_GPU_ID` is the zero-based index
+among the GPUs visible to the process. Startup fails immediately if the
+installed PaddlePaddle runtime has no CUDA support or the requested GPU does
+not exist; it never silently falls back to CPU. The environment variable
+selects a device but does not replace the installed runtime, so GPU mode still
+requires a CUDA-compatible `paddlepaddle-gpu` package.
 
-Use a dedicated environment for this service. The supported PaddleOCR 2.x
-stack pins NumPy below 2 and OpenCV below 4.12; current vLLM environments may
-require newer, incompatible OpenAI/OpenCV packages. Installing `.[cpu,dev]`
-inside a vLLM environment can also replace an existing PaddlePaddle 3.x build.
+The service uses PaddleOCR 3.x and converts its structured results back into
+the existing internal OCR contract, so the REST and MCP response contracts do
+not change. `OCR_VERSION=PP-OCRv4` preserves the previous PaddleOCR 2.9 model
+baseline; it can be changed independently after image-quality regression tests.
+
+Use a dedicated environment for this service. PaddleOCR 3.x installs PaddleX
+and its matching OpenCV contrib runtime; current vLLM environments may require
+different OpenAI/OpenCV packages. Installing OCR dependencies inside a vLLM
+environment can therefore replace packages used by the model server.
 For example:
 
 ```bash

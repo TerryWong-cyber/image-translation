@@ -1,4 +1,4 @@
-"""Resolve explicit PaddleOCR device settings against the installed runtime."""
+"""Build PaddleOCR 3.x initialization settings for the selected device."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from typing import Any
 from image_translation.config import OcrSettings
 
 
-def paddleocr_device_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, bool | int]:
-    """Build PaddleOCR device arguments and fail fast for unusable GPU settings."""
+def paddleocr_device(settings: OcrSettings, paddle: Any) -> str:
+    """Resolve a PaddleOCR 3.x device string and reject unusable GPU settings."""
     if settings.device == "cpu":
-        return {"use_gpu": False}
+        return "cpu"
 
     if not paddle.device.is_compiled_with_cuda():
         raise RuntimeError(
@@ -26,4 +26,18 @@ def paddleocr_device_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, boo
             f"{gpu_count} CUDA device(s)."
         )
 
-    return {"use_gpu": True, "gpu_id": settings.gpu_id}
+    return f"gpu:{settings.gpu_id}"
+
+
+def paddleocr_init_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, Any]:
+    """Return the explicit PaddleOCR 3.x pipeline configuration."""
+    return {
+        "lang": settings.language,
+        "ocr_version": settings.version,
+        "device": paddleocr_device(settings, paddle),
+        "engine": "paddle",
+        "use_doc_orientation_classify": False,
+        "use_doc_unwarping": False,
+        "use_textline_orientation": settings.use_angle_classifier,
+        "text_det_unclip_ratio": settings.unclip_ratio,
+    }

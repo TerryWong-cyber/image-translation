@@ -29,6 +29,7 @@ class SettingsTest(unittest.TestCase):
         self.assertIn("localhost:*", settings.mcp.allowed_hosts)
         self.assertEqual(settings.ocr.device, "cpu")
         self.assertEqual(settings.ocr.gpu_id, 0)
+        self.assertEqual(settings.ocr.version, "PP-OCRv4")
         self.assertEqual(
             settings.llm.translation_url,
             "http://127.0.0.1:5051/api/inference/qwen_translate",
@@ -79,12 +80,22 @@ class SettingsTest(unittest.TestCase):
             with self.assertRaisesRegex(ConfigurationError, "OCR_DEVICE"):
                 get_settings()
 
+    def test_invalid_ocr_version_fails_fast(self):
+        env = {
+            "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),
+            "OCR_VERSION": "PP-OCRv2",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            get_settings.cache_clear()
+            with self.assertRaisesRegex(ConfigurationError, "OCR_VERSION"):
+                get_settings()
+
     def test_optional_runtime_defaults_keep_existing_env_files_compatible(self):
         legacy_content = "\n".join(
             line
             for line in EXAMPLE_ENV.read_text(encoding="utf-8").splitlines()
             if not line.startswith("MCP_")
-            and not line.startswith(("OCR_DEVICE=", "OCR_GPU_ID="))
+            and not line.startswith(("OCR_DEVICE=", "OCR_GPU_ID=", "OCR_VERSION="))
         )
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:
             env_file.write(legacy_content)
@@ -102,6 +113,7 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.mcp.max_request_body_size, 1024 * 1024)
         self.assertEqual(settings.ocr.device, "cpu")
         self.assertEqual(settings.ocr.gpu_id, 0)
+        self.assertEqual(settings.ocr.version, "PP-OCRv4")
 
     def test_missing_required_setting_fails_fast(self):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:

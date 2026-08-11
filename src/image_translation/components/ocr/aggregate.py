@@ -337,14 +337,20 @@ def aggregate_ocr_results(img, image_path, ocr_results, output_path=None, return
 
 # 示例用法
 if __name__ == "__main__":
+    import paddle
     from paddleocr import PaddleOCR
 
-    ocr = PaddleOCR(use_angle_cls=True, lang='ch', ocr_version='PP-OCRv4', use_gpu=True, det_db_box_thresh=0.5)
+    from image_translation.components.ocr.device import paddleocr_init_kwargs
+    from image_translation.components.ocr.paddleocr3_adapter import paddleocr_results_to_legacy
+    from image_translation.config import get_settings
+
+    ocr_settings = get_settings().ocr
+    ocr = PaddleOCR(**paddleocr_init_kwargs(ocr_settings, paddle))
 
     # for i in range(2, 9):
     for i in range(1, 2):
         image_path = f"tt{i}.png"
-        ocr_results = ocr.ocr(image_path)
+        ocr_results = paddleocr_results_to_legacy(ocr.predict(image_path))
         time_start = time.time()
         img = cv2.imread(image_path, 0)
 
