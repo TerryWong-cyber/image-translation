@@ -41,6 +41,35 @@ class SettingsTest(unittest.TestCase):
             "http://127.0.0.1:5000/file/source/nested/image.jpg",
         )
         self.assertTrue(settings.prompts.translate_zh_en.endswith("\n"))
+        self.assertIn("English", settings.prompts.translate_any_en)
+        self.assertIn("简体中文", settings.prompts.translate_any_zh_cn)
+        self.assertIn("繁體中文", settings.prompts.translate_any_zh_tw)
+        self.assertIn("한국어", settings.prompts.translate_any_ko)
+        self.assertIn("日本語", settings.prompts.translate_any_ja)
+        self.assertIn("ภาษาไทย", settings.prompts.translate_any_th)
+        self.assertIn("French", settings.prompts.translate_any_fr)
+        self.assertIn("Arabic", settings.prompts.translate_any_ar)
+        self.assertIn("German", settings.prompts.translate_any_de)
+        self.assertIn("Russian", settings.prompts.translate_any_ru)
+        self.assertIn("Dutch", settings.prompts.translate_any_nl)
+        self.assertIn("Portuguese", settings.prompts.translate_any_pt)
+        self.assertIn("Spanish", settings.prompts.translate_any_es)
+        self.assertIn("Italian", settings.prompts.translate_any_it)
+        self.assertIn("Vietnamese", settings.prompts.translate_any_vi)
+        self.assertIn("Indonesian", settings.prompts.translate_any_id)
+        self.assertEqual(settings.paths.font_zh_file.name, "NotoSansSC-Regular.ttf")
+        self.assertEqual(settings.paths.font_zh_cn_file.name, "NotoSansSC-Regular.ttf")
+        self.assertEqual(settings.paths.font_zh_tw_file.name, "NotoSansTC-Regular.ttf")
+        self.assertEqual(settings.paths.font_latin_file.name, "NotoSans-Regular.ttf")
+        self.assertEqual(settings.paths.font_ja_file.name, "NotoSansJP-Regular.ttf")
+        self.assertEqual(settings.paths.font_ko_file.name, "NotoSansKR-Regular.ttf")
+        self.assertEqual(settings.paths.font_arabic_file.name, "NotoSansArabic-Regular.ttf")
+        self.assertEqual(settings.paths.font_cyrillic_file.name, "NotoSansCyrillic-Regular.ttf")
+        self.assertEqual(settings.paths.font_thai_file.name, "NotoSansThai-Regular.ttf")
+        self.assertEqual(
+            settings.paths.font_vietnamese_file.name,
+            "NotoSansVietnamese-Regular.ttf",
+        )
         self.assertEqual(settings.prompts.vision_file.name, "vision.json")
         self.assertEqual(settings.prompts.translations_file.name, "translations.json")
         self.assertIn("mm", settings.text_translation.no_translate_terms)
@@ -150,6 +179,16 @@ class SettingsTest(unittest.TestCase):
                     "OCR_TEXTLINE_MODEL_DIR=",
                     "OCR_DETECTION_MODEL_DIR=",
                     "OCR_RECOGNITION_MODEL_DIR=",
+                    "FONT_ZH_FILE=",
+                    "FONT_ZH_CN_FILE=",
+                    "FONT_ZH_TW_FILE=",
+                    "FONT_LATIN_FILE=",
+                    "FONT_JA_FILE=",
+                    "FONT_KO_FILE=",
+                    "FONT_ARABIC_FILE=",
+                    "FONT_CYRILLIC_FILE=",
+                    "FONT_THAI_FILE=",
+                    "FONT_VIETNAMESE_FILE=",
                 )
             )
         )
@@ -170,6 +209,10 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(settings.ocr.device, "cpu")
         self.assertEqual(settings.ocr.gpu_id, 0)
         self.assertEqual(settings.ocr.version, "PP-OCRv4")
+        self.assertEqual(settings.paths.font_latin_file, settings.paths.font_file)
+        self.assertEqual(settings.paths.font_arabic_file, settings.paths.font_file)
+        self.assertEqual(settings.paths.font_zh_cn_file, settings.paths.font_file)
+        self.assertEqual(settings.paths.font_zh_tw_file, settings.paths.font_file)
 
     def test_missing_required_setting_fails_fast(self):
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as env_file:

@@ -286,11 +286,37 @@ class PromptSettings:
     translate_en_zh: str
     translate_zh_en: str
     translate_any_zh: str
+    translate_any_zh_cn: str
+    translate_any_zh_tw: str
+    translate_any_en: str
+    translate_any_ko: str
+    translate_any_ja: str
+    translate_any_th: str
+    translate_any_fr: str
+    translate_any_ar: str
+    translate_any_de: str
+    translate_any_ru: str
+    translate_any_nl: str
+    translate_any_pt: str
+    translate_any_es: str
+    translate_any_it: str
+    translate_any_vi: str
+    translate_any_id: str
 
 
 @dataclass(frozen=True)
 class PathSettings:
     font_file: Path
+    font_zh_file: Path
+    font_zh_cn_file: Path
+    font_zh_tw_file: Path
+    font_latin_file: Path
+    font_ja_file: Path
+    font_ko_file: Path
+    font_arabic_file: Path
+    font_cyrillic_file: Path
+    font_thai_file: Path
+    font_vietnamese_file: Path
     test_input_dir: Path
     test_output_dir: Path
     test_translation_output_dir: Path
@@ -313,6 +339,13 @@ class Settings:
 def _path(env: Mapping[str, str], name: str) -> Path:
     path = Path(_required(env, name)).expanduser()
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _path_or(env: Mapping[str, str], name: str, fallback: Path) -> Path:
+    """Resolve an optional path setting, preserving legacy FONT_FILE fallback."""
+    if not env.get(name, "").strip():
+        return fallback
+    return _path(env, name)
 
 
 def _optional_directory(env: Mapping[str, str], name: str) -> Path | None:
@@ -408,6 +441,22 @@ def _prompt_settings(env: Mapping[str, str]) -> PromptSettings:
         translate_en_zh=_prompt_value(translations_document, "translate_en_zh", translations_file),
         translate_zh_en=_prompt_value(translations_document, "translate_zh_en", translations_file),
         translate_any_zh=_prompt_value(translations_document, "translate_any_zh", translations_file),
+        translate_any_zh_cn=_prompt_value(translations_document, "translate_any_zh_cn", translations_file),
+        translate_any_zh_tw=_prompt_value(translations_document, "translate_any_zh_tw", translations_file),
+        translate_any_en=_prompt_value(translations_document, "translate_any_en", translations_file),
+        translate_any_ko=_prompt_value(translations_document, "translate_any_ko", translations_file),
+        translate_any_ja=_prompt_value(translations_document, "translate_any_ja", translations_file),
+        translate_any_th=_prompt_value(translations_document, "translate_any_th", translations_file),
+        translate_any_fr=_prompt_value(translations_document, "translate_any_fr", translations_file),
+        translate_any_ar=_prompt_value(translations_document, "translate_any_ar", translations_file),
+        translate_any_de=_prompt_value(translations_document, "translate_any_de", translations_file),
+        translate_any_ru=_prompt_value(translations_document, "translate_any_ru", translations_file),
+        translate_any_nl=_prompt_value(translations_document, "translate_any_nl", translations_file),
+        translate_any_pt=_prompt_value(translations_document, "translate_any_pt", translations_file),
+        translate_any_es=_prompt_value(translations_document, "translate_any_es", translations_file),
+        translate_any_it=_prompt_value(translations_document, "translate_any_it", translations_file),
+        translate_any_vi=_prompt_value(translations_document, "translate_any_vi", translations_file),
+        translate_any_id=_prompt_value(translations_document, "translate_any_id", translations_file),
     )
 
 
@@ -449,6 +498,27 @@ def _ocr_settings(env: Mapping[str, str]) -> OcrSettings:
         textline_orientation_model_dir=orientation_dir,
         detection_model_dir=detection_dir,
         recognition_model_dir=recognition_dir,
+    )
+
+
+def _path_settings(env: Mapping[str, str]) -> PathSettings:
+    fallback_font_file = _path(env, "FONT_FILE")
+    legacy_zh_font_file = _path_or(env, "FONT_ZH_FILE", fallback_font_file)
+    return PathSettings(
+        font_file=fallback_font_file,
+        font_zh_file=legacy_zh_font_file,
+        font_zh_cn_file=_path_or(env, "FONT_ZH_CN_FILE", legacy_zh_font_file),
+        font_zh_tw_file=_path_or(env, "FONT_ZH_TW_FILE", legacy_zh_font_file),
+        font_latin_file=_path_or(env, "FONT_LATIN_FILE", fallback_font_file),
+        font_ja_file=_path_or(env, "FONT_JA_FILE", fallback_font_file),
+        font_ko_file=_path_or(env, "FONT_KO_FILE", fallback_font_file),
+        font_arabic_file=_path_or(env, "FONT_ARABIC_FILE", fallback_font_file),
+        font_cyrillic_file=_path_or(env, "FONT_CYRILLIC_FILE", fallback_font_file),
+        font_thai_file=_path_or(env, "FONT_THAI_FILE", fallback_font_file),
+        font_vietnamese_file=_path_or(env, "FONT_VIETNAMESE_FILE", fallback_font_file),
+        test_input_dir=_path(env, "TEST_INPUT_DIR"),
+        test_output_dir=_path(env, "TEST_OUTPUT_DIR"),
+        test_translation_output_dir=_path(env, "TEST_TRANSLATION_OUTPUT_DIR"),
     )
 
 
@@ -529,10 +599,5 @@ def get_settings() -> Settings:
             no_translate_terms=_no_translate_terms(_path(env, "NO_TRANSLATE_TERMS_FILE")),
         ),
         prompts=_prompt_settings(env),
-        paths=PathSettings(
-            font_file=_path(env, "FONT_FILE"),
-            test_input_dir=_path(env, "TEST_INPUT_DIR"),
-            test_output_dir=_path(env, "TEST_OUTPUT_DIR"),
-            test_translation_output_dir=_path(env, "TEST_TRANSLATION_OUTPUT_DIR"),
-        ),
+        paths=_path_settings(env),
     )

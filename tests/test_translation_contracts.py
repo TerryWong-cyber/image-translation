@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+from typing import get_args
 
 
 PYDANTIC_AVAILABLE = importlib.util.find_spec("pydantic") is not None
@@ -7,11 +8,23 @@ PYDANTIC_AVAILABLE = importlib.util.find_spec("pydantic") is not None
 if PYDANTIC_AVAILABLE:
     from pydantic import ValidationError
 
-    from image_translation.contracts import TranslationCommand, TranslationItem, TranslationResult
+    from image_translation.contracts import (
+        TranslationCommand,
+        TranslationItem,
+        TranslationLanguage,
+        TranslationResult,
+    )
+    from image_translation.utils.translation_prompts import AUTO_TRANSLATION_TARGETS
 
 
 @unittest.skipUnless(PYDANTIC_AVAILABLE, "pydantic is not installed")
 class TranslationContractsTest(unittest.TestCase):
+    def test_contract_contains_every_configured_auto_detect_target(self):
+        expected = {"en_zh", "zh_en"} | {
+            f"any_{target_code}" for target_code in AUTO_TRANSLATION_TARGETS
+        }
+        self.assertEqual(set(get_args(TranslationLanguage)), expected)
+
     def test_command_accepts_nested_object_key_and_supported_language(self):
         command = TranslationCommand(
             bucket="source-images",
@@ -21,6 +34,25 @@ class TranslationContractsTest(unittest.TestCase):
 
         self.assertEqual(command.image_key, "manuals/page-1.png")
         self.assertEqual(command.save_bucket, None)
+
+    def test_command_accepts_auto_detect_target_languages(self):
+        for target_code in AUTO_TRANSLATION_TARGETS:
+            language = f"any_{target_code}"
+            with self.subTest(language=language):
+                command = TranslationCommand(
+                    bucket="source-images",
+                    image_key="manuals/page-1.png",
+                    language=language,
+                )
+                self.assertEqual(command.language, language)
+
+    def test_command_rejects_unknown_auto_detect_target_language(self):
+        with self.assertRaises(ValidationError):
+            TranslationCommand(
+                bucket="source-images",
+                image_key="manuals/page-1.png",
+                language="any_xx",
+            )
 
     def test_command_rejects_path_traversal(self):
         with self.assertRaises(ValidationError):

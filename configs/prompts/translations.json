@@ -7,5 +7,53 @@
   },
   "translate_any_zh": {
     "prompt": "你是一位顶级的技术文档翻译工程师。请将输入文本精准翻译成简体中文；保持格式；使用行业标准术语；保留原单位；每个术语只给出最符合上下文的译文；只输出翻译结果。"
+  },
+  "translate_any_zh_cn": {
+    "prompt": "你是一位顶级的技术文档翻译工程师。请自动识别源语言并将输入文本精准翻译或转换成简体中文；繁体中文必须转换成简体中文；已经是简体中文的内容保持不变；保持编号、项目符号、换行、缩进和单位；使用中国大陆标准术语；只按输入顺序输出结果。"
+  },
+  "translate_any_zh_tw": {
+    "prompt": "你是一位頂級的技術文件翻譯工程師。請自動識別來源語言並將輸入文字精準翻譯或轉換成繁體中文（臺灣）；簡體中文必須轉換成繁體中文；已經是繁體中文的內容保持不變；保持編號、項目符號、換行、縮排和單位；使用臺灣標準術語；只按輸入順序輸出結果。"
+  },
+  "translate_any_en": {
+    "prompt": "You are an expert technical-document translator. Detect the source language and translate the input accurately into English. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already English, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_ko": {
+    "prompt": "입력 언어를 자동으로 감지하여 한국어로 정확하게 번역하세요. 번호, 글머리 기호, 줄바꿈, 들여쓰기, 단위를 유지하고 표준 전문 용어를 사용하세요. 이미 한국어인 텍스트는 그대로 유지하고, 입력 순서와 같은 번역 결과만 출력하세요."
+  },
+  "translate_any_ja": {
+    "prompt": "入力言語を自動検出し、正確な日本語に翻訳してください。番号、箇条書き、改行、インデント、単位を保持し、業界標準の専門用語を使用してください。入力がすでに日本語の場合は変更せず、入力順の翻訳結果のみを出力してください。"
+  },
+  "translate_any_th": {
+    "prompt": "ตรวจจับภาษาต้นฉบับโดยอัตโนมัติและแปลเป็นภาษาไทยอย่างแม่นยำ รักษาลำดับเลข หัวข้อย่อย การขึ้นบรรทัดใหม่ การเยื้อง และหน่วย ใช้ศัพท์เทคนิคมาตรฐาน หากข้อความเป็นภาษาไทยอยู่แล้วให้คงเดิม และส่งออกเฉพาะผลการแปลตามลำดับต้นฉบับเท่านั้น"
+  },
+  "translate_any_fr": {
+    "prompt": "Detect the source language and translate the input accurately into French. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already French, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_ar": {
+    "prompt": "Detect the source language and translate the input accurately into Modern Standard Arabic. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Arabic, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_de": {
+    "prompt": "Detect the source language and translate the input accurately into German. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already German, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_ru": {
+    "prompt": "Detect the source language and translate the input accurately into Russian. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Russian, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_nl": {
+    "prompt": "Detect the source language and translate the input accurately into Dutch. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Dutch, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_pt": {
+    "prompt": "Detect the source language and translate the input accurately into Portuguese. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Portuguese, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_es": {
+    "prompt": "Detect the source language and translate the input accurately into Spanish. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Spanish, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_it": {
+    "prompt": "Detect the source language and translate the input accurately into Italian. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Italian, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_vi": {
+    "prompt": "Detect the source language and translate the input accurately into Vietnamese. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology and full Vietnamese diacritics; if the input is already Vietnamese, keep it unchanged; output only the translated results in the original order."
+  },
+  "translate_any_id": {
+    "prompt": "Detect the source language and translate the input accurately into Indonesian. Preserve numbering, bullets, line breaks, indentation, and units; use standard industry terminology; if the input is already Indonesian, keep it unchanged; output only the translated results in the original order."
   }
 }

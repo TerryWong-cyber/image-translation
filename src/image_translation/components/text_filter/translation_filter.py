@@ -52,4 +52,9 @@ def should_translate(text: str | None, language: str = "en_zh") -> bool:
             "\u4e00" <= char <= "\u9fff" for char in alphabetic_chars
         )
 
+    if language in {"any_zh_cn", "any_zh_tw"}:
+        # Chinese text must still reach the model so Simplified/Traditional
+        # conversion can happen when the source uses the other writing system.
+        return any(char.isalpha() for char in text)
+
     return any(char.isalpha() for char in text)

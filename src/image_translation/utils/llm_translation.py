@@ -5,6 +5,7 @@ import requests
 
 from image_translation.components.text_box.text_format import cal_sentence_char_len, split_translated_texts
 from image_translation.config import get_settings
+from image_translation.utils.translation_prompts import translation_prompt
 
 
 def call_inference_api_v2(
@@ -105,11 +106,7 @@ def filter_multiple_translations(original_text, translated_text):
 
 def llm_translate(batch_agg_box_ids, batch_aggregated_texts, context, batch_size, language="en_zh"):
     settings = get_settings()
-    prompt = settings.prompts.translate_en_zh
-    if language == "zh_en":
-        prompt = settings.prompts.translate_zh_en
-    elif language == "any_zh":
-        prompt = settings.prompts.translate_any_zh
+    prompt = translation_prompt(settings.prompts, language)
 
     max_new_tokens = settings.llm.max_new_tokens
     # prompts = [prompt + text for text in batch_aggregated_texts]

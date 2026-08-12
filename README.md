@@ -185,8 +185,9 @@ http://127.0.0.1:8000/mcp
 The MCP server currently exposes one structured tool:
 
 ```text
-translate_image_from_oss(bucket, image_key, language="en_zh",
-                         save_bucket=None, output_key=None, segment=False)
+translate_image_from_oss(bucket, image_key, language,
+                         save_bucket=None, output_key=None, segment=False,
+                         dry_run=False)
 ```
 
 The tool reads the source image from the configured object-storage service,
@@ -194,6 +195,44 @@ writes the translated image back to object storage, and returns the source and
 translated object locations together with translated text regions. It accepts
 object references rather than base64 image data so large images do not enter an
 agent's context.
+
+Set `dry_run=true` to validate the same arguments and return a structured plan
+without downloading the object, running OCR or translation, or uploading an
+output image. Dry-run is opt-in; omitting it performs the real translation.
+The MCP call requires an explicit translation direction. Auto-detection modes
+use `any_<target>` with language or locale target codes:
+
+| Mode | Target language | Font setting |
+| --- | --- | --- |
+| `any_zh_cn` | Simplified Chinese | `FONT_ZH_CN_FILE` |
+| `any_zh_tw` | Traditional Chinese (Taiwan) | `FONT_ZH_TW_FILE` |
+| `any_zh` | Simplified Chinese (compatibility alias) | `FONT_ZH_CN_FILE` |
+| `any_en` | English | `FONT_LATIN_FILE` |
+| `any_ja` | Japanese | `FONT_JA_FILE` |
+| `any_ko` | Korean | `FONT_KO_FILE` |
+| `any_fr` | French | `FONT_LATIN_FILE` |
+| `any_ar` | Modern Standard Arabic | `FONT_ARABIC_FILE` |
+| `any_de` | German | `FONT_LATIN_FILE` |
+| `any_ru` | Russian | `FONT_CYRILLIC_FILE` |
+| `any_nl` | Dutch | `FONT_LATIN_FILE` |
+| `any_pt` | Portuguese | `FONT_LATIN_FILE` |
+| `any_th` | Thai | `FONT_THAI_FILE` |
+| `any_es` | Spanish | `FONT_LATIN_FILE` |
+| `any_it` | Italian | `FONT_LATIN_FILE` |
+| `any_vi` | Vietnamese | `FONT_VIETNAMESE_FILE` |
+| `any_id` | Indonesian | `FONT_LATIN_FILE` |
+
+`any_zh_cn` and `any_zh_tw` also process Chinese source text so they can convert
+between Simplified and Traditional Chinese. The legacy `any_zh`, `en_zh`, and
+`zh_en` directions remain supported, and the REST
+endpoint retains its existing `en_zh` default. The configured `FONT_FILE` must
+contain glyphs for the selected target language and remains the fallback when a
+language-specific font variable is absent. `FONT_ZH_FILE` is retained as a
+compatibility fallback for both Chinese variants when the newer variables are
+unset. Font paths are read at startup, but
+files are loaded only when that target language is rendered. Download or copy
+the configured Noto files into the deployment before translating. Arabic uses
+right-to-left shaping when Pillow was built with RAQM support.
 
 Test the endpoint with MCP Inspector after the service is running:
 

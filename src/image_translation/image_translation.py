@@ -5,7 +5,12 @@ import numpy as np
 from PIL import Image, ImageDraw
 from concurrent.futures import ThreadPoolExecutor
 
-from image_translation.components.font.font_process import cal_box_font_size, get_font
+from image_translation.components.font.font_process import (
+    cal_box_font_size,
+    font_file_for_language,
+    get_font,
+    text_layout_options,
+)
 from image_translation.components.ocr.aggregate import aggregate_ocr_results
 from image_translation.components.text_box.box_process import (
     process_ocr_res,
@@ -22,8 +27,10 @@ class ImageTranslationContext:
     一个用于封装单次图片翻译任务所有状态的上下文对象。
     """
 
-    def __init__(self, original_image):
+    def __init__(self, original_image, language="en_zh"):
         self.original_image = original_image
+        self.language = language
+        self.font_path = font_file_for_language(language)
         self.ocr_box_ids = []
         self.ocr_box_map_text = {}
         self.ocr_box_map_coordinate = {}
@@ -104,8 +111,9 @@ def add_translated_text(img, box_ids, text_colors, context, bold=False):
             continue
 
         font_size = context.ocr_box_font_size_map.get(o_box_id, 30)
-        font = get_font(font_size)
-        text_bbox = font.getbbox(translated_text)
+        font = get_font(font_size, font_path=context.font_path)
+        layout_options = text_layout_options(context.language)
+        text_bbox = font.getbbox(translated_text, **layout_options)
         print(f'add_translated_text:{translated_text},font_size:{font_size}')
 
         box_width, box_height = context.ocr_box_map_width_height.get(o_box_id, (0, 0))
@@ -120,9 +128,22 @@ def add_translated_text(img, box_ids, text_colors, context, bold=False):
 
         fill_color = color + (255,)
         if bold:
-            text_draw.text((-text_bbox[0], -text_bbox[1]), translated_text, fill=fill_color, font=font, stroke_width=1)
+            text_draw.text(
+                (-text_bbox[0], -text_bbox[1]),
+                translated_text,
+                fill=fill_color,
+                font=font,
+                stroke_width=1,
+                **layout_options,
+            )
         else:
-            text_draw.text((-text_bbox[0], -text_bbox[1]), translated_text, fill=fill_color, font=font)
+            text_draw.text(
+                (-text_bbox[0], -text_bbox[1]),
+                translated_text,
+                fill=fill_color,
+                font=font,
+                **layout_options,
+            )
 
         # text_img.save(f"piece/{o_box_id}.png") # Debug line
 
@@ -299,7 +320,7 @@ def translate_image(img, ocr_result, language):
         raise ValueError("Failed to load image")
 
     # 步骤1: 创建上下文对象
-    context = ImageTranslationContext(img)
+    context = ImageTranslationContext(img, language=language)
 
     # 步骤2: 获取OCR结果
     result = ocr_result
@@ -342,6 +363,8 @@ def translate_image(img, ocr_result, language):
         context.ocr_box_map_width_height,
         context.ocr_box_map_translated_text,
         context.ocr_box_map_text,
+        font_path=context.font_path,
+        language=language,
     )
 
     # 步骤9: 获取需要重绘的框的坐标

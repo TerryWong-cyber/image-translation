@@ -8,7 +8,27 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-TranslationLanguage = Literal["en_zh", "zh_en", "any_zh"]
+TranslationLanguage = Literal[
+    "en_zh",
+    "zh_en",
+    "any_zh",
+    "any_zh_cn",
+    "any_zh_tw",
+    "any_en",
+    "any_ko",
+    "any_ja",
+    "any_th",
+    "any_fr",
+    "any_ar",
+    "any_de",
+    "any_ru",
+    "any_nl",
+    "any_pt",
+    "any_es",
+    "any_it",
+    "any_vi",
+    "any_id",
+]
 
 
 def _validate_bucket(value: str) -> str:

@@ -23,6 +23,11 @@ class TranslationFilterTest(unittest.TestCase):
             self.assertTrue(should_translate("Hello world"))
             self.assertTrue(should_translate("中文", language="zh_en"))
             self.assertFalse(should_translate("中文", language="any_zh"))
+            self.assertTrue(should_translate("繁體中文", language="any_zh_cn"))
+            self.assertTrue(should_translate("简体中文", language="any_zh_tw"))
+            self.assertTrue(should_translate("中文", language="any_en"))
+            self.assertTrue(should_translate("English", language="any_ko"))
+            self.assertTrue(should_translate("日本語", language="any_th"))
 
 
 if __name__ == "__main__":

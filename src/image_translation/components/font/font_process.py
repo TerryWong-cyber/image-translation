@@ -1,10 +1,26 @@
 import numpy as np
-from PIL import ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont, features
 from typing import List, Dict, Tuple, Optional
 from image_translation.components.text_box.text_format import cal_sentence_char_len
 from image_translation.config import get_settings
+from image_translation.utils.translation_prompts import translation_target
 
 font_cache = {}  # 字体缓存
+
+
+def font_file_for_language(language: str, paths=None):
+    """Resolve the configured font file for a translation target."""
+    configured_paths = paths or get_settings().paths
+    target = translation_target(language)
+    return getattr(configured_paths, target.font_setting)
+
+
+def text_layout_options(language: str) -> dict[str, str]:
+    """Enable right-to-left shaping for Arabic when Pillow has RAQM support."""
+    target = translation_target(language)
+    if target.code == "ar" and features.check("raqm"):
+        return {"direction": "rtl", "language": "ar"}
+    return {}
 
 
 def get_font(size, font_path=None):
@@ -15,14 +31,26 @@ def get_font(size, font_path=None):
     return font_cache[cache_key]
 
 
-def get_text_dimensions(font_size: float, text: str) -> Tuple[int, int]:
+def get_text_dimensions(
+    font_size: float,
+    text: str,
+    font_path=None,
+    language: str = "en_zh",
+) -> Tuple[int, int]:
     """获取文本的宽度和高度"""
-    font_obj = get_font(font_size)
-    text_bbox = font_obj.getbbox(text)
+    font_obj = get_font(font_size, font_path=font_path)
+    text_bbox = font_obj.getbbox(text, **text_layout_options(language))
     return text_bbox[2] - text_bbox[0], text_bbox[3] - text_bbox[1]
 
 
-def cal_font_size(o_box_ids, ocr_box_map_width_height, agg_text, pre_text=None):
+def cal_font_size(
+    o_box_ids,
+    ocr_box_map_width_height,
+    agg_text,
+    pre_text=None,
+    font_path=None,
+    language="en_zh",
+):
     if not o_box_ids or len(o_box_ids) == 0:
         print("o_box_ids is empty", o_box_ids)
         return
@@ -55,12 +83,22 @@ def cal_font_size(o_box_ids, ocr_box_map_width_height, agg_text, pre_text=None):
         font_size = min_font_size
 
     max_attempts = 1000
-    text_width, text_height = get_text_dimensions(font_size, agg_text)
+    text_width, text_height = get_text_dimensions(
+        font_size,
+        agg_text,
+        font_path=font_path,
+        language=language,
+    )
     # 自适应调整字体大小
     while ((min_box_height <= text_height or total_width <= text_width)
            and font_size > min_font_size and max_attempts > 0):
         font_size -= 2
-        text_width, text_height = get_text_dimensions(font_size, agg_text)
+        text_width, text_height = get_text_dimensions(
+            font_size,
+            agg_text,
+            font_path=font_path,
+            language=language,
+        )
         max_attempts -= 1
 
     print("font_size", font_size, "total_width", total_width, "text_len", text_len)
@@ -68,7 +106,7 @@ def cal_font_size(o_box_ids, ocr_box_map_width_height, agg_text, pre_text=None):
 
 
 def cal_box_font_size(agg_box_map_origin, ocr_box_map_width_height, ocr_box_map_translated_text,
-                      ocr_box_map_source_text):
+                      ocr_box_map_source_text, font_path=None, language="en_zh"):
     ocr_box_font_size_map = {}
     for agg_box_id, o_box_ids in agg_box_map_origin.items():
         sum_translated_text = ""
@@ -78,7 +116,14 @@ def cal_box_font_size(agg_box_map_origin, ocr_box_map_width_height, ocr_box_map_
             sum_source_text += ocr_box_map_source_text.get(o_box_id, "unknown text")
 
         print("sum_source_text:", sum_source_text, "sum_translated_text:", sum_translated_text)
-        font_size = cal_font_size(o_box_ids, ocr_box_map_width_height, sum_translated_text, sum_source_text)
+        font_size = cal_font_size(
+            o_box_ids,
+            ocr_box_map_width_height,
+            sum_translated_text,
+            sum_source_text,
+            font_path=font_path,
+            language=language,
+        )
 
         for o_box_id in o_box_ids:
             ocr_box_font_size_map[o_box_id] = font_size
