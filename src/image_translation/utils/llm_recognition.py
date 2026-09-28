@@ -8,7 +8,7 @@ from image_translation.config import get_settings
 
 # deprecated
 def call_llm_recognition_api(
-    image_base64, prompt=None, max_new_tokens=None, batch_size=None, timeout=None, url=None
+        image_base64, prompt=None, max_new_tokens=None, batch_size=None, timeout=None, url=None
 ):
     settings = get_settings()
     prompt = prompt or settings.prompts.recognition
@@ -60,8 +60,16 @@ def call_llm_recognition_api_batch(base64_images, prompt=None, max_new_tokens=No
         else:
             print(f"Error: {result.get('error', 'Unknown error')}")
             return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
+    except requests.exceptions.HTTPError as exc:
+        response = exc.response
+        print(
+            "LLM批量接口失败:",
+            response.status_code if response is not None else None,
+            response.text if response is not None else str(exc),
+        )
+        return None
+    except requests.exceptions.RequestException as exc:
+        print(f"Request failed: {exc}")
         return None
 
 
