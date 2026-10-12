@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from uuid import uuid4
 
 import httpx
 import uvicorn
@@ -140,11 +141,14 @@ def translation_error(exc: Exception) -> JSONResponse:
 async def process_image_translate(body: UrlTranslationRequest, request: Request):
     """Synchronously translate a complete URL and persist to the default bucket."""
     service: ImageTranslationService = request.app.state.translation_service
+    request_id = str(uuid4())
     try:
-        result = await service.translate_url(str(body.image_url), body.language, body.segment)
-        return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
+        result = await service.translate_url(str(body.image_url), body.language, body.segment, request_id=request_id)
+        return JSONResponse(status_code=200, content=result.model_dump(mode="json"), headers={"X-Request-ID": request_id})
     except Exception as exc:
-        return translation_error(exc)
+        response = translation_error(exc)
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 async def process_binary_translate(
@@ -161,6 +165,7 @@ async def process_binary_translate(
     if not media_type.startswith("image/") and media_type != "application/octet-stream":
         raise HTTPException(status_code=415, detail="Send raw image bytes with an image Content-Type")
     content = bytearray()
+    request_id = str(uuid4())
     try:
         async for chunk in request.stream():
             if len(content) + len(chunk) > settings.api.max_image_bytes:
@@ -168,9 +173,12 @@ async def process_binary_translate(
             content.extend(chunk)
         service: ImageTranslationService = request.app.state.translation_service
         result = await service.translate_bytes(bytes(content), language, segment, content_type=media_type)
-        return Response(content=result.content, media_type=result.content_type, headers={"Cache-Control": "no-store"})
+        return Response(content=result.content, media_type=result.content_type,
+                        headers={"Cache-Control": "no-store", "X-Request-ID": request_id})
     except Exception as exc:
-        return translation_error(exc)
+        response = translation_error(exc)
+        response.headers["X-Request-ID"] = request_id
+        return response
 
 
 if settings.api.binary_enabled:

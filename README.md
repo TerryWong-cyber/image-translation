@@ -89,6 +89,14 @@ unsupported binary request media types return 415; download/upstream HTTP errors
 return 502; download/OCR timeouts return 504; other processing/storage failures
 return 500. Error bodies are JSON even for the binary endpoint.
 
+REST translation responses include `X-Request-ID`; URL success JSON contains the
+same `request_id`. Binary callers can capture it with `curl -D headers.txt`.
+Processing errors also include this header; schema validation (422), binary
+authentication (401), and unsupported media type (415) are rejected before an ID
+is assigned. The service does not connect to a database or store processing
+records. Business task status and history belong to the calling application.
+URL outputs are still uploaded to OSS; binary requests do not persist images.
+
 ## Runtime configuration
 
 All deployment-specific settings are read through
@@ -141,7 +149,7 @@ selects a device but does not replace the installed runtime, so GPU mode still
 requires a CUDA-compatible `paddlepaddle-gpu` package.
 
 The service uses PaddleOCR 3.x and converts its structured results back into
-the existing internal OCR contract, while the internal OSS-reference MCP contract stays compatible. `OCR_VERSION=PP-OCRv4` preserves the previous PaddleOCR 2.9 model
+the existing internal OCR contract. MCP uses the complete URL contract described above. `OCR_VERSION=PP-OCRv4` preserves the previous PaddleOCR 2.9 model
 baseline; it can be changed independently after image-quality regression tests.
 
 Use a dedicated environment for this service. PaddleOCR 3.x installs PaddleX

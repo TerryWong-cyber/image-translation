@@ -50,6 +50,7 @@ class TranslationApiTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(result["translated_url"].startswith("https://files.example.com/storage/file/results/translations/"))
             self.assertEqual(result["source_url"], "https://example.com/input.png")
             self.assertIn("request_id", result)
+            self.assertEqual(response.headers["x-request-id"], result["request_id"])
             results.append(result["translated_url"])
         self.assertNotEqual(*results)
         args = self.oss.upload_image.call_args.args
@@ -71,6 +72,8 @@ class TranslationApiTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.headers["content-type"], mime)
             self.assertEqual(Image.open(BytesIO(response.content)).format, format_name)
+            from uuid import UUID
+            UUID(response.headers["x-request-id"])
         self.oss.upload_image.assert_not_called()
         self.service._image_source.fetch.assert_not_called()
 
@@ -82,6 +85,7 @@ class TranslationApiTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(api, "settings", replace(api.settings, api=replace(api.settings.api, max_image_bytes=2))):
             response = await self.client.post("/binary", content=png(), headers={"authorization": "Bearer secret", "content-type": "image/png"})
         self.assertEqual(response.status_code, 413)
+        self.assertIn("x-request-id", response.headers)
         self.ocr.recognize.assert_not_called()
 
     async def test_bad_image_and_pixel_limit_fail_before_ocr(self):
@@ -96,10 +100,12 @@ class TranslationApiTest(unittest.IsolatedAsyncioTestCase):
         self.service._image_source.fetch.side_effect = ImageDownloadError("Failed to download source image")
         response = await self.client.post("/translate", json={"image_url": "https://example.com/a.png"})
         self.assertEqual(response.status_code, 502)
+        self.assertIn("x-request-id", response.headers)
         self.service._image_source.fetch.side_effect = None
         self.oss.upload_image.side_effect = RuntimeError("upload failed")
         response = await self.client.post("/translate", json={"image_url": "https://example.com/a.png"})
         self.assertEqual(response.status_code, 500)
+        self.assertIn("x-request-id", response.headers)
 
 
 class LocalOssHttpTest(unittest.IsolatedAsyncioTestCase):

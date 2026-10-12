@@ -96,9 +96,10 @@ class ImageTranslationService:
             [TranslationItem.model_validate(item) for item in raw_items],
         )
 
-    async def translate_url(self, image_url: str, language: str = "en_zh", segment: bool = False) -> TranslationResult:
+    async def translate_url(self, image_url: str, language: str = "en_zh", segment: bool = False,
+                            *, request_id: str | None = None) -> TranslationResult:
         started_at = time.monotonic()
-        request_id = str(uuid4())
+        request_id = request_id or str(uuid4())
         content, content_type = await self._image_source.fetch(image_url)
         translated = await self.translate_bytes(content, language, segment, urlsplit(image_url).path, content_type)
         bucket = self._settings.oss.default_bucket
