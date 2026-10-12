@@ -9,7 +9,7 @@ if PYDANTIC_AVAILABLE:
     from pydantic import ValidationError
 
     from image_translation.contracts import (
-        TranslationCommand,
+        UrlTranslationRequest,
         TranslationItem,
         TranslationLanguage,
         TranslationResult,
@@ -25,44 +25,43 @@ class TranslationContractsTest(unittest.TestCase):
         }
         self.assertEqual(set(get_args(TranslationLanguage)), expected)
 
-    def test_command_accepts_nested_object_key_and_supported_language(self):
-        command = TranslationCommand(
-            bucket="source-images",
-            image_key="manuals/page-1.png",
+    def test_request_accepts_complete_url_and_supported_language(self):
+        command = UrlTranslationRequest(
+            image_url="https://images.example.com/manuals/page-1.png",
             language="zh_en",
         )
 
-        self.assertEqual(command.image_key, "manuals/page-1.png")
-        self.assertEqual(command.save_bucket, None)
+        self.assertEqual(str(command.image_url), "https://images.example.com/manuals/page-1.png")
 
     def test_command_accepts_auto_detect_target_languages(self):
         for target_code in AUTO_TRANSLATION_TARGETS:
             language = f"any_{target_code}"
             with self.subTest(language=language):
-                command = TranslationCommand(
-                    bucket="source-images",
-                    image_key="manuals/page-1.png",
+                command = UrlTranslationRequest(
+                    image_url="https://images.example.com/manuals/page-1.png",
                     language=language,
                 )
                 self.assertEqual(command.language, language)
 
     def test_command_rejects_unknown_auto_detect_target_language(self):
         with self.assertRaises(ValidationError):
-            TranslationCommand(
-                bucket="source-images",
-                image_key="manuals/page-1.png",
+            UrlTranslationRequest(
+                image_url="https://images.example.com/manuals/page-1.png",
                 language="any_xx",
             )
 
-    def test_command_rejects_path_traversal(self):
+    def test_request_rejects_non_url_and_storage_fields(self):
+        for value in ("../secret.png", "images/a.png", "file:///tmp/a.png", "http://user:pass@example.com/a.png", "https://example.com/a.png#fragment"):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                UrlTranslationRequest(image_url=value)
         with self.assertRaises(ValidationError):
-            TranslationCommand(bucket="source", image_key="../secret.png")
+            UrlTranslationRequest(image_url="https://example.com/a.png", bucket="images")
 
-    def test_rest_payload_preserves_legacy_shape(self):
+    def test_result_contains_urls_request_id_and_duration(self):
         result = TranslationResult(
             request_id="request-1",
-            source_url="source/input.png",
-            translated_url="target/en_zh_translated_input.png",
+            source_url="https://images.example.com/input.png",
+            translated_url="https://files.example.com/translations/result.png",
             data=[
                 TranslationItem(
                     coordinate=[[0, 0], [10, 0], [10, 10], [0, 10]],
@@ -73,12 +72,12 @@ class TranslationContractsTest(unittest.TestCase):
             duration_ms=10,
         )
 
-        payload = result.to_rest_payload()
+        payload = result.model_dump(mode="json")
         self.assertEqual(
             set(payload),
-            {"status", "source_url", "translated_url", "data"},
+            {"status", "request_id", "source_url", "translated_url", "data", "duration_ms"},
         )
-        self.assertNotIn("request_id", payload)
+        self.assertEqual(payload["request_id"], "request-1")
 
 
 if __name__ == "__main__":

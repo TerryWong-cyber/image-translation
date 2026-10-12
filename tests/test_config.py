@@ -75,6 +75,24 @@ class SettingsTest(unittest.TestCase):
         self.assertIn("mm", settings.text_translation.no_translate_terms)
         self.assertIn("pcb", settings.text_translation.no_translate_terms)
 
+    def test_binary_api_is_disabled_and_requires_token_when_enabled(self):
+        with patch.dict(os.environ, {"IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV)}, clear=True):
+            get_settings.cache_clear()
+            self.assertFalse(get_settings().api.binary_enabled)
+            with patch.dict(os.environ, {"API_BINARY_ENABLED": "true"}):
+                get_settings.cache_clear()
+                with self.assertRaisesRegex(ConfigurationError, "API_BINARY_TOKEN"):
+                    get_settings()
+            with patch.dict(os.environ, {"API_BINARY_ENABLED": "true", "API_BINARY_TOKEN": "secret"}):
+                get_settings.cache_clear()
+                self.assertTrue(get_settings().api.binary_enabled)
+
+    def test_public_file_url_preserves_proxy_prefix_and_escapes_keys(self):
+        with patch.dict(os.environ, {"IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV), "OSS_PUBLIC_BASE_URL": "https://files.example.com/storage"}, clear=True):
+            get_settings.cache_clear()
+            settings = get_settings()
+        self.assertEqual(settings.oss.public_file_url("results", "folder/a b?#.png"), "https://files.example.com/storage/file/results/folder/a%20b%3F%23.png")
+
     def test_process_environment_overrides_dotenv(self):
         env = {
             "IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV),

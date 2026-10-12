@@ -1,23 +1,24 @@
-"""FastAPI host exposing both the legacy REST API and MCP."""
+"""FastAPI host exposing URL and binary translation APIs plus MCP."""
 
 from __future__ import annotations
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import ValidationError
 
 from image_translation.clients.oss_client import oss_client_instance
 from image_translation.config import get_settings
-from image_translation.contracts import TranslationCommand
+from image_translation.contracts import TranslationLanguage, TranslationResult, UrlTranslationRequest
 from image_translation.errors import (
-    ImageTranslationError,
     InvalidImageError,
+    ImageTooLargeError,
+    ImageDownloadError,
     OcrTimeoutError,
 )
 from image_translation.mcp import TranslationServiceRegistry, create_mcp_server
@@ -119,56 +120,64 @@ async def health_ready(request: Request):
     }
 
 
-@app.post(settings.api.image_translate_path)
-async def process_image_translate(request: Request):
-    """Legacy REST adapter; the successful response shape remains unchanged."""
+def translation_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, ImageTooLargeError):
+        code = 413
+    elif isinstance(exc, InvalidImageError):
+        code = 400
+    elif isinstance(exc, (OcrTimeoutError, TimeoutError, httpx.TimeoutException)):
+        code = 504
+    elif isinstance(exc, (ImageDownloadError, httpx.HTTPError)):
+        code = 502
+    else:
+        logger.exception("Image translation failed")
+        return JSONResponse(status_code=500, content={"error": "Image translation failed"})
+    message = "Upstream service request failed" if isinstance(exc, httpx.HTTPError) else str(exc)
+    return JSONResponse(status_code=code, content={"error": message})
 
-    request_data = await request.json()
-    image_key = request_data.get("image_url")
-    bucket = request_data.get("bucket")
-    if not all([image_key, bucket]):
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Missing 'image_url' or 'bucket'"},
-        )
 
-    try:
-        command = TranslationCommand(
-            bucket=bucket,
-            image_key=image_key,
-            language=request_data.get("language", "en_zh"),
-            save_bucket=request_data.get("save_bucket") or bucket,
-            output_key=request_data.get("output_key"),
-            segment=request_data.get("segment", False),
-        )
-    except ValidationError as exc:
-        return JSONResponse(
-            status_code=400,
-            content={"error": exc.errors(include_url=False)[0]["msg"]},
-        )
-
+@app.post(settings.api.image_translate_path, response_model=TranslationResult)
+async def process_image_translate(body: UrlTranslationRequest, request: Request):
+    """Synchronously translate a complete URL and persist to the default bucket."""
     service: ImageTranslationService = request.app.state.translation_service
     try:
-        result = await service.translate(command)
-    except OcrTimeoutError:
-        logger.error("OCR processing timed out for image_url: %s", image_key)
-        return JSONResponse(
-            status_code=504,
-            content={"error": "OCR processing timed out"},
-        )
-    except InvalidImageError as exc:
-        return JSONResponse(status_code=400, content={"error": str(exc)})
-    except ImageTranslationError as exc:
-        logger.exception("Image translation failed for %s", image_key)
-        return JSONResponse(status_code=500, content={"error": str(exc)})
-    except Exception:
-        logger.exception("Unexpected image translation failure for %s", image_key)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "An internal error occurred during image translation"},
-        )
+        result = await service.translate_url(str(body.image_url), body.language, body.segment)
+        return JSONResponse(status_code=200, content=result.model_dump(mode="json"))
+    except Exception as exc:
+        return translation_error(exc)
 
-    return JSONResponse(status_code=200, content=result.to_rest_payload())
+
+async def process_binary_translate(
+    request: Request,
+    language: TranslationLanguage = Query(default="en_zh"),
+    segment: bool = Query(default=False),
+):
+    """Internal raw-image endpoint. Authentication precedes reading the body."""
+    if not secrets.compare_digest(
+        request.headers.get("authorization", "").encode(), f"Bearer {settings.api.binary_token}".encode()
+    ):
+        raise HTTPException(status_code=401, detail="Invalid internal API token")
+    media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if not media_type.startswith("image/") and media_type != "application/octet-stream":
+        raise HTTPException(status_code=415, detail="Send raw image bytes with an image Content-Type")
+    content = bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(content) + len(chunk) > settings.api.max_image_bytes:
+                raise ImageTooLargeError("Image exceeds the configured byte limit")
+            content.extend(chunk)
+        service: ImageTranslationService = request.app.state.translation_service
+        result = await service.translate_bytes(bytes(content), language, segment, content_type=media_type)
+        return Response(content=result.content, media_type=result.content_type, headers={"Cache-Control": "no-store"})
+    except Exception as exc:
+        return translation_error(exc)
+
+
+if settings.api.binary_enabled:
+    app.add_api_route(
+        "/internal/image-translate", process_binary_translate,
+        methods=["POST"], include_in_schema=False,
+    )
 
 
 if mcp_app is not None:

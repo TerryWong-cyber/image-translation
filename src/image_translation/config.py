@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Mapping, cast
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -187,6 +187,12 @@ class ServerSettings:
 @dataclass(frozen=True)
 class ApiSettings:
     image_translate_path: str
+    binary_enabled: bool = False
+    binary_token: str = ""
+    max_image_bytes: int = 20 * 1024 * 1024
+    max_image_pixels: int = 40_000_000
+    download_timeout_seconds: int = 15
+    max_redirects: int = 3
 
 
 @dataclass(frozen=True)
@@ -244,13 +250,23 @@ class OssSettings:
     base_url: str
     upload_endpoint: str
     file_endpoint: str
+    default_bucket: str = "image-translations"
+    public_base_url: str = ""
 
     def upload_url(self) -> str:
         return _url(self.base_url, self.upload_endpoint)
 
     def file_url(self, bucket_name: str, file_key: str) -> str:
-        endpoint = self.file_endpoint.format(bucket=bucket_name, key=file_key)
+        endpoint = self.file_endpoint.format(
+            bucket=quote(bucket_name, safe=""), key=quote(file_key, safe="/"),
+        )
         return _url(self.base_url, endpoint)
+
+    def public_file_url(self, bucket_name: str, file_key: str) -> str:
+        endpoint = self.file_endpoint.format(
+            bucket=quote(bucket_name, safe=""), key=quote(file_key, safe="/"),
+        )
+        return _url(self.public_base_url or self.base_url, endpoint)
 
 
 @dataclass(frozen=True)
@@ -525,6 +541,13 @@ def _path_settings(env: Mapping[str, str]) -> PathSettings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     env = _environment()
+    binary_enabled = _optional_bool(env, "API_BINARY_ENABLED", False)
+    binary_token = env.get("API_BINARY_TOKEN", "").strip()
+    if binary_enabled and not binary_token:
+        raise ConfigurationError("API_BINARY_TOKEN is required when API_BINARY_ENABLED=true")
+    default_bucket = env.get("OSS_DEFAULT_BUCKET", "image-translations").strip()
+    if not default_bucket or len(default_bucket) > 255 or any(c in default_bucket for c in ("/", "\\", "\x00")):
+        raise ConfigurationError("OSS_DEFAULT_BUCKET must be a single non-empty bucket name")
     return Settings(
         server=ServerSettings(
             app=_required(env, "SERVER_APP"),
@@ -537,6 +560,12 @@ def get_settings() -> Settings:
         ),
         api=ApiSettings(
             image_translate_path=_route(env, "API_IMAGE_TRANSLATE_PATH"),
+            binary_enabled=binary_enabled,
+            binary_token=binary_token,
+            max_image_bytes=_optional_int(env, "API_MAX_IMAGE_BYTES", 20 * 1024 * 1024, minimum=1),
+            max_image_pixels=_optional_int(env, "API_MAX_IMAGE_PIXELS", 40_000_000, minimum=1),
+            download_timeout_seconds=_optional_int(env, "API_DOWNLOAD_TIMEOUT_SECONDS", 15, minimum=1),
+            max_redirects=_optional_int(env, "API_MAX_REDIRECTS", 3, minimum=0, maximum=10),
         ),
         mcp=McpSettings(
             enabled=_optional_bool(env, "MCP_ENABLED", True),
@@ -592,6 +621,8 @@ def get_settings() -> Settings:
             base_url=_absolute_url(env, "OSS_BASE_URL"),
             upload_endpoint=_route(env, "OSS_UPLOAD_ENDPOINT"),
             file_endpoint=_oss_file_route(env, "OSS_FILE_ENDPOINT"),
+            default_bucket=default_bucket,
+            public_base_url=_absolute_url(env, "OSS_PUBLIC_BASE_URL") if env.get("OSS_PUBLIC_BASE_URL", "").strip() else "",
         ),
         ocr=_ocr_settings(env),
         text_translation=TextTranslationSettings(

@@ -15,3 +15,15 @@ class OcrTimeoutError(ImageTranslationError):
 
 class OcrProcessingError(ImageTranslationError):
     """Raised when the OCR worker cannot process a request."""
+
+
+class ImageTooLargeError(InvalidImageError):
+    """Input exceeds the configured byte or pixel limit."""
+
+
+class InvalidImageUrlError(InvalidImageError):
+    """URL is unsafe or unsupported."""
+
+
+class ImageDownloadError(ImageTranslationError):
+    """Source server cannot supply the image."""

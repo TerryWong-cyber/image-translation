@@ -5,19 +5,24 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated, Literal, Protocol
 
+import httpx
+
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
+
+from image_translation.errors import ImageTranslationError
 
 from image_translation.contracts import (
-    TranslationCommand,
+    UrlTranslationRequest,
     TranslationLanguage,
     TranslationResult,
 )
 
 
 class TranslationService(Protocol):
-    async def translate(self, command: TranslationCommand) -> TranslationResult: ...
+    async def translate_url(self, image_url: str, language: str = "en_zh", segment: bool = False) -> TranslationResult: ...
 
 
 class TranslationDryRunResult(BaseModel):
@@ -26,8 +31,8 @@ class TranslationDryRunResult(BaseModel):
     status: Literal["dry_run"] = "dry_run"
     dry_run: Literal[True] = True
     provider: Literal["image_translation"] = "image_translation"
-    tool_name: Literal["translate_image_from_oss"] = "translate_image_from_oss"
-    arguments: TranslationCommand
+    tool_name: Literal["translate_image_from_url"] = "translate_image_from_url"
+    arguments: UrlTranslationRequest
 
 
 TranslationToolOutcome = Annotated[
@@ -38,6 +43,9 @@ TranslationToolOutcome = Annotated[
 
 class TranslationToolResult(RootModel[TranslationToolOutcome]):
     """Structured MCP result for either execution or a dry-run plan."""
+
+    # Both union members are objects; MCP requires this at the schema root.
+    model_config = ConfigDict(json_schema_extra={"type": "object"})
 
 
 class TranslationServiceRegistry:
@@ -54,7 +62,7 @@ class TranslationServiceRegistry:
 
     def get(self) -> TranslationService:
         if self._service is None:
-            raise RuntimeError("Image translation service is not ready")
+            raise ToolError("Image translation service is not ready")
         return self._service
 
 
@@ -68,42 +76,38 @@ def create_mcp_server(
     server = MCPServer(
         name="image-translation",
         title="Image Translation",
-        description="Translate text embedded in images stored in the configured object storage.",
+        description="Translate text embedded in an image from a complete HTTP(S) URL.",
         instructions=(
-            "Call translate_image_from_oss with an object-storage bucket and relative image key. "
+            "Call translate_image_from_url with a complete public or configured OSS image URL. "
             "Use an any_<target> language mode to detect the source language automatically. "
             "Supported modes are any_zh_cn, any_zh_tw, any_zh, any_en, any_ja, any_ko, any_fr, "
             "any_ar, any_de, any_ru, "
             "any_nl, any_pt, any_th, any_es, any_it, any_vi, and any_id. The explicit legacy "
             "directions en_zh and zh_en remain supported. Set "
             "dry_run=true only when the user "
-            "asks to validate or preview the call without reading or writing object storage. The normal "
-            "tool call writes a translated image back to object storage and returns structured text regions."
+            "asks to validate or preview the call without downloading or storing an image. The normal "
+            "tool call stores the translated image in the default bucket and returns a complete download URL and structured text regions."
         ),
         version="0.1.0",
     )
     concurrency = asyncio.Semaphore(max_concurrency)
 
     @server.tool(
-        title="Translate an image from object storage",
+        title="Translate an image from URL",
         annotations=ToolAnnotations(
             read_only_hint=False,
             destructive_hint=False,
-            idempotent_hint=True,
-            open_world_hint=False,
+            idempotent_hint=False,
+            open_world_hint=True,
         ),
     )
-    async def translate_image_from_oss(
-        bucket: Annotated[
-            str,
-            Field(min_length=1, max_length=255, description="Source object-storage bucket."),
-        ],
-        image_key: Annotated[
+    async def translate_image_from_url(
+        image_url: Annotated[
             str,
             Field(
-                min_length=1,
-                max_length=2048,
-                description="Relative object key of the source image; do not pass image bytes or a URL.",
+                min_length=1, max_length=4096,
+                description="Complete HTTP(S) image URL, including signed query parameters when needed. Accepts public images or the configured OSS file service; no bucket/key or local paths.",
+                json_schema_extra={"format": "uri"},
             ),
         ],
         language: Annotated[
@@ -119,14 +123,6 @@ def create_mcp_server(
                 examples=["any_en"],
             ),
         ],
-        save_bucket: Annotated[
-            str | None,
-            Field(description="Destination bucket; defaults to the source bucket."),
-        ] = None,
-        output_key: Annotated[
-            str | None,
-            Field(description="Destination object key; a deterministic key is generated when omitted."),
-        ] = None,
         segment: Annotated[
             bool,
             Field(description="Split a large image into regions before OCR."),
@@ -141,23 +137,28 @@ def create_mcp_server(
             ),
         ] = False,
     ) -> TranslationToolResult:
-        """Translate an OSS image using an explicit or auto-detected source language."""
+        """Translate a URL image using an explicit or auto-detected source language."""
 
-        command = TranslationCommand(
-            bucket=bucket,
-            image_key=image_key,
-            language=language,
-            save_bucket=save_bucket,
-            output_key=output_key,
-            segment=segment,
-        )
+        try:
+            command = UrlTranslationRequest(
+                image_url=image_url,
+                language=language,
+                segment=segment,
+            )
+        except ValidationError as exc:
+            raise ToolError(exc.errors(include_url=False)[0]["msg"]) from exc
         if dry_run:
             return TranslationToolResult(
                 root=TranslationDryRunResult(arguments=command),
             )
 
-        async with concurrency:
-            result = await registry.get().translate(command)
+        try:
+            async with concurrency:
+                result = await registry.get().translate_url(str(command.image_url), command.language, command.segment)
+        except (ImageTranslationError, TimeoutError) as exc:
+            raise ToolError(str(exc)) from exc
+        except httpx.HTTPError as exc:
+            raise ToolError("Upstream service request failed") from exc
         return TranslationToolResult(root=result)
 
     return server

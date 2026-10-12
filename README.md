@@ -1,5 +1,94 @@
 # Image Translation
 
+## Synchronous translation APIs
+
+Both REST APIs keep the HTTP request open until translation finishes. There is
+no task submission or status polling API.
+
+### URL input → stored result URL (public REST contract)
+
+`POST /llm/image-translate` accepts JSON containing a **complete HTTP(S) URL**:
+
+```bash
+curl -X POST http://127.0.0.1:8000/llm/image-translate \
+  -H 'Content-Type: application/json' \
+  -d '{"image_url":"https://example.com/image.png","language":"en_zh","segment":false}'
+```
+
+```json
+{
+  "status": "success",
+  "request_id": "generated-uuid",
+  "source_url": "https://example.com/image.png",
+  "translated_url": "https://files.example.com/file/image-translations/translations/generated-uuid.png",
+  "data": [],
+  "duration_ms": 1234
+}
+```
+
+The service downloads the image, translates it, and uploads the result to
+`OSS_DEFAULT_BUCKET`, using a unique key per request. The response is sent only
+after upload succeeds. The source URL may be a public image, a signed URL, or a
+complete file URL on the configured OSS service. No bucket/key fields are
+accepted by this REST API; old bucket/key REST requests must migrate to complete
+URLs. MCP follows the same URL contract; no OSS-reference compatibility tool
+is exposed.
+
+Pre-create `OSS_DEFAULT_BUCKET` with write access. Set `OSS_PUBLIC_BASE_URL` to
+the externally reachable file-service base URL (including any proxy base path).
+The configured `OSS_FILE_ENDPOINT` is appended to it with URL-escaped bucket/key
+components. If unset, it falls back to `OSS_BASE_URL`, which is only suitable when
+that address is also reachable by callers. Result links use the file service's
+existing access policy; this service does not create signed output links or
+make private buckets public. Configure a caller-accessible download route and
+any result retention/lifecycle policy on the OSS service.
+
+Downloads have a total deadline, a byte limit, and a redirect limit. Each public
+URL/redirect resolves only to global IP addresses; connections are pinned to the
+checked IP while retaining HTTP Host and TLS SNI. Private addresses are allowed
+only for the configured `OSS_BASE_URL` origin and file-route prefix. Signed input
+queries are preserved, and no environment proxy or authorization header is
+forwarded. HTTP-level compressed responses are rejected to keep the byte bound
+predictable. Private OSS requiring additional credentials is not supported;
+provide a signed input URL or an accessible OSS file route.
+
+### Raw image input → raw image output (internal only)
+
+`POST /internal/image-translate?language=en_zh&segment=false` accepts an image as
+the raw request body and returns image bytes with the appropriate `Content-Type`.
+It neither downloads nor stores images. It is disabled by default, absent from
+OpenAPI, and registered only when the following settings are supplied:
+
+```dotenv
+API_BINARY_ENABLED=true
+API_BINARY_TOKEN=replace-with-a-strong-service-token
+```
+
+Enabling it without a token fails configuration validation. Restrict this route
+to internal traffic at the gateway as well.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/internal/image-translate?language=en_zh' \
+  -H "Authorization: Bearer $API_BINARY_TOKEN" \
+  -H 'Content-Type: image/png' \
+  --data-binary @input.png \
+  --output translated.png
+```
+
+JPEG, PNG, WebP, BMP and TIFF output encoding follows the existing format-aware
+encoding behavior. Both paths validate image decoding and pixel count before
+OCR. Defaults are 20 MiB of input bytes, 40 million pixels, 15 seconds for source
+downloads, and 3 redirects. Configure `API_MAX_IMAGE_BYTES`,
+`API_MAX_IMAGE_PIXELS`, `API_DOWNLOAD_TIMEOUT_SECONDS`, and `API_MAX_REDIRECTS` as
+needed. These are download/input bounds, not an end-to-end translation deadline;
+OCR and model upstreams retain their existing timeout settings.
+
+Invalid request schemas return 422; invalid images/unsafe URLs return 400;
+oversized images return 413; binary authentication failures return 401;
+unsupported binary request media types return 415; download/upstream HTTP errors
+return 502; download/OCR timeouts return 504; other processing/storage failures
+return 500. Error bodies are JSON even for the binary endpoint.
+
 ## Runtime configuration
 
 All deployment-specific settings are read through
@@ -52,8 +141,7 @@ selects a device but does not replace the installed runtime, so GPU mode still
 requires a CUDA-compatible `paddlepaddle-gpu` package.
 
 The service uses PaddleOCR 3.x and converts its structured results back into
-the existing internal OCR contract, so the REST and MCP response contracts do
-not change. `OCR_VERSION=PP-OCRv4` preserves the previous PaddleOCR 2.9 model
+the existing internal OCR contract, while the internal OSS-reference MCP contract stays compatible. `OCR_VERSION=PP-OCRv4` preserves the previous PaddleOCR 2.9 model
 baseline; it can be changed independently after image-quality regression tests.
 
 Use a dedicated environment for this service. PaddleOCR 3.x installs PaddleX
@@ -175,7 +263,7 @@ The existing `Dockerfile` remains a lightweight development shell. Use
 
 ## MCP access
 
-The same process exposes the legacy REST endpoint and an MCP Streamable HTTP
+The same process exposes the URL-based REST endpoint and an MCP Streamable HTTP
 endpoint. MCP is enabled by default at:
 
 ```text
@@ -185,20 +273,18 @@ http://127.0.0.1:8000/mcp
 The MCP server currently exposes one structured tool:
 
 ```text
-translate_image_from_oss(bucket, image_key, language,
-                         save_bucket=None, output_key=None, segment=False,
-                         dry_run=False)
+translate_image_from_url(image_url, language, segment=False, dry_run=False)
 ```
 
-The tool reads the source image from the configured object-storage service,
-writes the translated image back to object storage, and returns the source and
-translated object locations together with translated text regions. It accepts
-object references rather than base64 image data so large images do not enter an
-agent's context.
+The tool uses the same URL download, byte translation, and default-bucket
+persistence path as REST. It returns complete source and result URLs,
+`request_id`, `duration_ms`, and translated text regions. Agents pass a URL
+rather than image bytes or storage bucket/key fields.
 
-Set `dry_run=true` to validate the same arguments and return a structured plan
-without downloading the object, running OCR or translation, or uploading an
-output image. Dry-run is opt-in; omitting it performs the real translation.
+Set `dry_run=true` to validate URL syntax and translation options and return a
+structured plan without downloading, running OCR/translation, or uploading.
+Dry-run does not resolve DNS, verify source accessibility, or check storage
+permissions. Omitting it performs the real synchronous translation.
 The MCP call requires an explicit translation direction. Auto-detection modes
 use `any_<target>` with language or locale target codes:
 

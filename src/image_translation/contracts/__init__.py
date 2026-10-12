@@ -1,14 +1,14 @@
 """Typed contracts shared by HTTP and MCP adapters."""
 
 from image_translation.contracts.translation import (
-    TranslationCommand,
+    UrlTranslationRequest,
     TranslationItem,
     TranslationLanguage,
     TranslationResult,
 )
 
 __all__ = [
-    "TranslationCommand",
+    "UrlTranslationRequest",
     "TranslationItem",
     "TranslationLanguage",
     "TranslationResult",
