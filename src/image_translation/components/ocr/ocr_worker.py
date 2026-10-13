@@ -1,4 +1,5 @@
 import time
+import logging
 import cv2
 import base64
 import numpy as np
@@ -12,6 +13,9 @@ from image_translation.components.ocr.paddleocr3_adapter import (
     paddleocr_results_to_legacy,
 )
 from image_translation.utils.llm_recognition import call_llm_recognition_api_batch
+from image_translation.errors import ModelUpstreamError
+
+logger = logging.getLogger(__name__)
 
 
 def det_to_ocr_result(image, boxes):
@@ -66,8 +70,7 @@ def det_to_ocr_result(image, boxes):
     rec_results = call_llm_recognition_api_batch([base64_image for _, base64_image in crops])
 
     if not rec_results or len(rec_results) != len(crops):
-        print("错误: 批量识别返回结果数量与请求不匹配或返回为空。")
-        return [[]]
+        raise ModelUpstreamError("Recognition model returned an invalid response count")
 
     # 3. 将识别结果与原始box对应起来 (这部分逻辑不变)
     ocr_result = []
@@ -120,6 +123,8 @@ def has_non_zh_en_text(image):
         else:
             return False, f"invalid_model_output: {result}"
 
+    except ModelUpstreamError:
+        raise
     except Exception as e:
         return False, str(e)
 
@@ -174,7 +179,7 @@ def ocr_worker_process(task_queue, result_queue):
 
             has, err_msg = has_non_zh_en_text(image=img)
             if err_msg and err_msg != "":
-                print(f"[OCR Worker] Warning: Error during language check: {err_msg}. Defaulting to standard OCR.")
+                raise ModelUpstreamError(f"Language detection failed: {err_msg}")
 
             prediction_results = ocr_engine.predict(img)
             if has:
@@ -190,7 +195,7 @@ def ocr_worker_process(task_queue, result_queue):
             result_queue.put((task_id, ocr_result))
 
         except Exception as e:
-            print(f"[OCR Worker] Error processing task: {e}")
+            logger.exception("[OCR Worker] Error processing task %s", locals().get("task_id"))
             # 如果处理出错，也需要向结果队列发送一个信号
             if 'task_id' in locals():
                 result_queue.put((task_id, e))  # 将异常对象作为结果

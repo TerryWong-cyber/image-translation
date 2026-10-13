@@ -86,8 +86,14 @@ OCR and model upstreams retain their existing timeout settings.
 Invalid request schemas return 422; invalid images/unsafe URLs return 400;
 oversized images return 413; binary authentication failures return 401;
 unsupported binary request media types return 415; download/upstream HTTP errors
-return 502; download/OCR timeouts return 504; other processing/storage failures
+return 502; download/OCR/model timeouts return 504; other processing/storage failures
 return 500. Error bodies are JSON even for the binary endpoint.
+
+Model connection failures, failed statuses, malformed responses, missing results,
+and empty translations abort the entire synchronous request with 502. This also
+applies to recognition and language-detection model failures. Upstream errors are
+logged with tracebacks and bounded response details; no incomplete image is
+rendered or uploaded. Images with no detected text still return normally.
 
 REST translation responses include `X-Request-ID`; URL success JSON contains the
 same `request_id`. Binary callers can capture it with `curl -D headers.txt`.

@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from image_translation.config import OcrSettings
-from image_translation.errors import OcrProcessingError
+from image_translation.errors import ModelUpstreamError, OcrProcessingError
 from image_translation.utils.image_segmentation import adjust_box_heights, segment_image
 
 
@@ -150,6 +150,8 @@ class OcrRuntime:
                 self._pending.pop(request_id, None)
 
         for result, _ in processed_results:
+            if isinstance(result, ModelUpstreamError):
+                raise result
             if isinstance(result, Exception):
                 raise OcrProcessingError(str(result)) from result
 

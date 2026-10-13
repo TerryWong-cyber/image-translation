@@ -1,7 +1,6 @@
-import json
 import re
 
-import requests
+from image_translation.clients.llm_client import request_model
 
 from image_translation.config import get_settings
 
@@ -16,25 +15,12 @@ def call_llm_recognition_api(
     batch_size = batch_size or settings.llm.batch_size
     timeout = timeout or settings.llm.recognition_timeout_seconds
     url = url or settings.llm.recognition_url
-    headers = {"Content-Type": "application/json"}
     data = {
         "system_prompt": "",
         "user_prompt": prompt,
         "image_base64": image_base64
     }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=timeout)
-        response.raise_for_status()
-        result = response.json()
-        print("call_inference_api response:", result)
-        if result.get("status") == "success":
-            return result.get("response", "")
-        else:
-            print(f"Error: {result.get('error', 'Unknown error')}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-        return None
+    return request_model(url, data, timeout, 1, response_field="response")[0]
 
 
 # 新增一个用于批量调用的API函数
@@ -44,33 +30,12 @@ def call_llm_recognition_api_batch(base64_images, prompt=None, max_new_tokens=No
     max_new_tokens = max_new_tokens or settings.llm.max_new_tokens
     timeout = timeout or settings.llm.recognition_timeout_seconds
     url = url or settings.llm.recognition_batch_url
-    headers = {"Content-Type": "application/json"}
     data = {
         "user_prompt": prompt,
         "image_base64_list": base64_images,
         "max_new_tokens": max_new_tokens
     }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=timeout)
-        response.raise_for_status()
-        result = response.json()
-        print(f"call_inference_api_batch response (total {len(base64_images)} images):", result)
-        if result.get("status") == "success":
-            return result.get("responses", [])  # 返回识别结果列表
-        else:
-            print(f"Error: {result.get('error', 'Unknown error')}")
-            return None
-    except requests.exceptions.HTTPError as exc:
-        response = exc.response
-        print(
-            "LLM批量接口失败:",
-            response.status_code if response is not None else None,
-            response.text if response is not None else str(exc),
-        )
-        return None
-    except requests.exceptions.RequestException as exc:
-        print(f"Request failed: {exc}")
-        return None
+    return request_model(url, data, timeout, len(base64_images))
 
 
 def normalize_text(text: str) -> str:

@@ -21,6 +21,8 @@ from image_translation.errors import (
     ImageTooLargeError,
     ImageDownloadError,
     OcrTimeoutError,
+    ModelUpstreamError,
+    ModelTimeoutError,
 )
 from image_translation.mcp import TranslationServiceRegistry, create_mcp_server
 from image_translation.runtime import OcrRuntime
@@ -126,9 +128,9 @@ def translation_error(exc: Exception) -> JSONResponse:
         code = 413
     elif isinstance(exc, InvalidImageError):
         code = 400
-    elif isinstance(exc, (OcrTimeoutError, TimeoutError, httpx.TimeoutException)):
+    elif isinstance(exc, (ModelTimeoutError, OcrTimeoutError, TimeoutError, httpx.TimeoutException)):
         code = 504
-    elif isinstance(exc, (ImageDownloadError, httpx.HTTPError)):
+    elif isinstance(exc, (ModelUpstreamError, ImageDownloadError, httpx.HTTPError)):
         code = 502
     else:
         logger.exception("Image translation failed")

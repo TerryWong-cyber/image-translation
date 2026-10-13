@@ -107,6 +107,26 @@ class TranslationApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 500)
         self.assertIn("x-request-id", response.headers)
 
+    async def test_model_failure_aborts_both_routes_without_uploading(self):
+        from image_translation.errors import ModelUpstreamError, ModelTimeoutError
+        for error, status in ((ModelUpstreamError("Model returned empty text"), 502), (ModelTimeoutError("Model request timed out"), 504)):
+            with patch.object(service_module, "translate_image", side_effect=error):
+                response = await self.client.post("/translate", json={"image_url": "https://example.com/a.png"})
+                self.assertEqual(response.status_code, status, response.text)
+                self.assertEqual(response.json(), {"error": str(error)})
+                self.assertIn("x-request-id", response.headers)
+                response = await self.client.post("/binary", content=png(), headers={"authorization": "Bearer secret", "content-type": "image/png"})
+                self.assertEqual(response.status_code, status, response.text)
+                self.assertEqual(response.json(), {"error": str(error)})
+        self.oss.upload_image.assert_not_called()
+
+    async def test_recognition_model_failure_is_not_an_empty_ocr_success(self):
+        from image_translation.errors import ModelUpstreamError
+        self.ocr.recognize.side_effect = ModelUpstreamError("Recognition model unavailable")
+        response = await self.client.post("/translate", json={"image_url": "https://example.com/a.png"})
+        self.assertEqual(response.status_code, 502)
+        self.oss.upload_image.assert_not_called()
+
 
 class LocalOssHttpTest(unittest.IsolatedAsyncioTestCase):
     async def test_url_download_upload_and_returned_url_over_real_http(self):

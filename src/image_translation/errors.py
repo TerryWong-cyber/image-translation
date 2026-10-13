@@ -27,3 +27,11 @@ class InvalidImageUrlError(InvalidImageError):
 
 class ImageDownloadError(ImageTranslationError):
     """Source server cannot supply the image."""
+
+
+class ModelUpstreamError(ImageTranslationError):
+    """Model request failed or returned unusable output."""
+
+
+class ModelTimeoutError(ModelUpstreamError):
+    """Model request exceeded its configured timeout."""

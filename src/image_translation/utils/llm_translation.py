@@ -1,7 +1,6 @@
-import json
 import re
 
-import requests
+from image_translation.clients.llm_client import request_model, validate_responses
 
 from image_translation.components.text_box.text_format import cal_sentence_char_len, split_translated_texts
 from image_translation.config import get_settings
@@ -16,24 +15,11 @@ def call_inference_api_v2(
     batch_size = batch_size or settings.batch_size
     timeout = timeout or settings.translation_timeout_seconds
     url = url or settings.translation_url
-    headers = {"Content-Type": "application/json"}
     data = {
         "texts_to_translate": texts_to_translate,
         "translate_prompt": prompt,
     }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=timeout)
-        response.raise_for_status()
-        result = response.json()
-        print("call_inference_api response:", result)
-        if result.get("status") == "success":
-            return result.get("responses", [])
-        else:
-            print(f"Error: {result.get('error', 'Unknown error')}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-        return None
+    return request_model(url, data, timeout, len(texts_to_translate))
 
 
 def call_inference_api(
@@ -45,7 +31,6 @@ def call_inference_api(
     batch_size = batch_size or settings.batch_size
     timeout = timeout or settings.translation_timeout_seconds
     url = url or settings.legacy_inference_url
-    headers = {"Content-Type": "application/json"}
     data = {
         "prompts": prompts,
         "max_new_tokens": max_new_tokens,
@@ -55,19 +40,7 @@ def call_inference_api(
         "diversity_penalty": diversity_penalty,
         "batch_size": batch_size
     }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=timeout)
-        response.raise_for_status()
-        result = response.json()
-        print("call_inference_api response:", result)
-        if result.get("status") == "success":
-            return result.get("responses", [])
-        else:
-            print(f"Error: {result.get('error', 'Unknown error')}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-        return None
+    return request_model(url, data, timeout, len(prompts))
 
 
 def normalize_text(text: str) -> str:
@@ -115,21 +88,15 @@ def llm_translate(batch_agg_box_ids, batch_aggregated_texts, context, batch_size
     llm_res = call_inference_api_v2(prompt=prompt, texts_to_translate=batch_aggregated_texts,
                                     max_new_tokens=max_new_tokens, batch_size=batch_size)
 
-    if llm_res is None:
-        print("Error: llm_res is None!")
-        return {}, [], {}
-
+    validate_responses(llm_res, len(batch_aggregated_texts))
     unchanged_agg_box_ids = []
     translated_results_for_boxes = {}
-
-    if len(llm_res) != len(batch_aggregated_texts):
-        print(f"Error: len(llm_res) {len(llm_res)} not equal len(batch_aggregated_texts) {len(batch_aggregated_texts)}")
 
     agg_translated_map = {}
     for i, res in enumerate(llm_res):
         res = res.replace("\\n", " ")
         agg_text = batch_aggregated_texts[i]
-        translated_text = res if res is not None else agg_text
+        translated_text = res
         agg_box_id = batch_agg_box_ids[i]
 
         print(f"Aggregated Text: {agg_text}")

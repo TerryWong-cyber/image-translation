@@ -187,6 +187,21 @@ class McpServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.is_error)
         self.assertIn("not ready", result.content[0].text)
 
+    async def test_model_failure_is_reported_as_tool_error(self):
+        from image_translation.errors import ModelUpstreamError, ModelTimeoutError
+
+        for failure in (ModelUpstreamError("Model unavailable"), ModelTimeoutError("Model timed out")):
+            service = SimpleNamespace(translate_url=AsyncMock(side_effect=failure))
+            registry = TranslationServiceRegistry()
+            registry.set(service)
+            server = create_mcp_server(registry)
+            async with Client(server, raise_exceptions=True) as client:
+                result = await client.call_tool("translate_image_from_url", {
+                    "image_url": "https://images.example.com/a.png", "language": "en_zh"
+                })
+            self.assertTrue(result.is_error)
+            self.assertIn(str(failure), result.content[0].text)
+
     async def test_streamable_http_is_available_at_exact_mcp_path(self):
         registry = TranslationServiceRegistry()
         service = SimpleNamespace(translate_url=AsyncMock(return_value=TranslationResult(
