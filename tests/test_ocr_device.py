@@ -1,10 +1,12 @@
 import unittest
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
 from image_translation.components.ocr.device import (
     paddleocr_device,
     paddleocr_init_kwargs,
+    _local_model_name,
 )
 from image_translation.config import OcrDevice, OcrSettings
 
@@ -63,25 +65,45 @@ class PaddleOcrDeviceTest(unittest.TestCase):
 
     def test_init_kwargs_use_explicit_local_model_directories(self):
         settings = _settings("cpu")
-        settings = OcrSettings(
-            **{
-                **settings.__dict__,
-                "textline_orientation_model_dir": Path("/models/orientation"),
-                "detection_model_dir": Path("/models/detection"),
-                "recognition_model_dir": Path("/models/recognition"),
-            }
-        )
 
-        kwargs = paddleocr_init_kwargs(settings, SimpleNamespace(device=None))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = {}
+            for role, name in (
+                ("textline_orientation", "PP-LCNet_x1_0_textline_ori"),
+                ("detection", "PP-OCRv4_mobile_det"),
+                ("recognition", "en_PP-OCRv4_mobile_rec"),
+            ):
+                model_dir = Path(temp_dir) / role
+                model_dir.mkdir()
+                (model_dir / "inference.yml").write_text(
+                    f"Global:\n  model_name: {name}\n", encoding="utf-8"
+                )
+                paths[f"{role}_model_dir"] = model_dir
+            settings = OcrSettings(**{**settings.__dict__, **paths})
+            kwargs = paddleocr_init_kwargs(settings, SimpleNamespace(device=None))
 
-        self.assertEqual(kwargs["text_detection_model_dir"], "/models/detection")
-        self.assertEqual(kwargs["text_recognition_model_dir"], "/models/recognition")
+        self.assertEqual(kwargs["text_detection_model_dir"], str(paths["detection_model_dir"]))
+        self.assertEqual(kwargs["text_recognition_model_dir"], str(paths["recognition_model_dir"]))
         self.assertEqual(
             kwargs["textline_orientation_model_dir"],
-            "/models/orientation",
+            str(paths["textline_orientation_model_dir"]),
         )
+        self.assertEqual(kwargs["text_detection_model_name"], "PP-OCRv4_mobile_det")
+        self.assertEqual(kwargs["text_recognition_model_name"], "en_PP-OCRv4_mobile_rec")
+        self.assertEqual(kwargs["textline_orientation_model_name"], "PP-LCNet_x1_0_textline_ori")
         self.assertNotIn("lang", kwargs)
         self.assertNotIn("ocr_version", kwargs)
+
+    def test_local_model_name_rejects_missing_or_invalid_metadata(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = Path(temp_dir)
+            with self.assertRaisesRegex(RuntimeError, "Cannot read Paddle model name"):
+                _local_model_name(model_dir)
+            for metadata in ("{}", "Global: null", "Global: [", "Global:\n  model_name: null", "Global:\n  model_name: ''"):
+                with self.subTest(metadata=metadata):
+                    (model_dir / "inference.yml").write_text(metadata, encoding="utf-8")
+                    with self.assertRaises(RuntimeError):
+                        _local_model_name(model_dir)
 
     def test_gpu_requires_cuda_runtime(self):
         with self.assertRaisesRegex(RuntimeError, "not compiled with CUDA"):

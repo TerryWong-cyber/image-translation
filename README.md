@@ -210,6 +210,17 @@ The models are stored inside the image under
 `/opt/paddlex-cache/models.sha256.json`, containing the size and SHA-256 digest
 of every model file. Production startup does not download models.
 
+Build-time prefetch downloads files directly through ModelScope's snapshot API;
+it does not initialize PaddleOCR or import the Paddle inference runtime. Building
+the image requires no GPU or `libcuda.so.1`. GPU Paddle is loaded only in a running
+container with NVIDIA GPU access. The prefetch helper supports the fixed English
+PP-OCRv4 models listed above, and rejects other language/version/source options.
+
+For explicit local model directories, runtime reads `Global.model_name` from
+each `inference.yml` and passes both the model name and directory to PaddleOCR.
+PaddleOCR ignores `lang`/`ocr_version` when local directories are supplied; names
+must be explicit to avoid mixing bundled PP-OCRv4 files with SDK default models.
+
 Prepare the production configuration:
 
 ```bash

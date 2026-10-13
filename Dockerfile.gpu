@@ -29,7 +29,6 @@ RUN apt-get update \
 COPY pyproject.toml README.md server.py ./
 COPY src ./src
 COPY configs ./configs
-COPY scripts ./scripts
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --upgrade pip \
@@ -39,6 +38,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && python -m pip install ".[gpu]" \
     && python -m pip check
 
+# Keep script-only fixes from invalidating the dependency installation layer.
+COPY scripts ./scripts
+
+# Download files only: build containers do not need the NVIDIA driver or GPU.
 # Model downloads happen at image-build time. Runtime can start without access
 # to Hugging Face, AIStudio, ModelScope, or BOS.
 RUN python scripts/prefetch_paddle_models.py \

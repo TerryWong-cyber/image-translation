@@ -1,0 +1,44 @@
+# Use with: docker compose -f docker-compose.production.yml up -d
+# Build/tag the image separately before updating the running service.
+services:
+  image-translation:
+    image: ${IMAGE_TRANSLATION_IMAGE:-image-translation:production}
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "8000"
+      SERVER_RELOAD: "false"
+      OCR_DEVICE: gpu
+      OCR_GPU_ID: "0"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["${IMAGE_TRANSLATION_GPU_ID:-1}"]
+              capabilities: [gpu]
+    ports:
+      - "${IMAGE_TRANSLATION_BIND_ADDRESS:-0.0.0.0}:${IMAGE_TRANSLATION_PORT:-8030}:8000"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - type: bind
+        source: /usr/share/fonts/opentype/noto
+        target: /usr/share/fonts/opentype/noto
+        read_only: true
+        bind:
+          create_host_path: false
+    shm_size: 2gb
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"

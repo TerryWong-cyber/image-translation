@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
+
+import yaml
 
 from image_translation.config import OcrSettings
 
@@ -29,6 +32,19 @@ def paddleocr_device(settings: OcrSettings, paddle: Any) -> str:
     return f"gpu:{settings.gpu_id}"
 
 
+def _local_model_name(model_dir: Path) -> str:
+    """Read the artifact's identity even when its directory was renamed."""
+    config_path = model_dir / "inference.yml"
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        name = config["Global"]["model_name"]
+    except (OSError, yaml.YAMLError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"Cannot read Paddle model name from {config_path}: {exc}") from exc
+    if not isinstance(name, str) or not name.strip():
+        raise RuntimeError(f"Invalid Global.model_name in {config_path}")
+    return name
+
+
 def paddleocr_init_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, Any]:
     """Return the explicit PaddleOCR 3.x pipeline configuration."""
     kwargs: dict[str, Any] = {
@@ -43,10 +59,17 @@ def paddleocr_init_kwargs(settings: OcrSettings, paddle: Any) -> dict[str, Any]:
         kwargs.update(lang=settings.language, ocr_version=settings.version)
     else:
         kwargs.update(
+            # PaddleOCR ignores lang/version for explicit directories. Supply
+            # the artifact names too, instead of inheriting SDK default models.
+            text_detection_model_name=_local_model_name(settings.detection_model_dir),
+            text_recognition_model_name=_local_model_name(settings.recognition_model_dir),
             text_detection_model_dir=str(settings.detection_model_dir),
             text_recognition_model_dir=str(settings.recognition_model_dir),
         )
     if settings.textline_orientation_model_dir is not None:
+        kwargs["textline_orientation_model_name"] = _local_model_name(
+            settings.textline_orientation_model_dir
+        )
         kwargs["textline_orientation_model_dir"] = str(
             settings.textline_orientation_model_dir
         )
