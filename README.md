@@ -345,6 +345,12 @@ files are loaded only when that target language is rendered. Download or copy
 the configured Noto files into the deployment before translating. Arabic uses
 right-to-left shaping when Pillow was built with RAQM support.
 
+Variable Noto fonts (`*-VF.ttf`) are rendered explicitly at Medium weight (500),
+including during text measurement, rather than using the font's default weight.
+Static fonts retain the weight embedded in their file; configure a Medium or
+Semibold static font file if not using variable fonts. Font weight does not
+change the sampled text color or the image resampling pipeline.
+
 Test the endpoint with MCP Inspector after the service is running:
 
 ```bash

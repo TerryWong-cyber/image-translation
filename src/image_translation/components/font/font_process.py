@@ -6,6 +6,7 @@ from image_translation.config import get_settings
 from image_translation.utils.translation_prompts import translation_target
 
 font_cache = {}  # 字体缓存
+DEFAULT_FONT_WEIGHT = 500  # Medium; 600 selects Semibold for variable fonts.
 
 
 def font_file_for_language(language: str, paths=None):
@@ -23,11 +24,24 @@ def text_layout_options(language: str) -> dict[str, str]:
     return {}
 
 
-def get_font(size, font_path=None):
+def get_font(size, font_path=None, weight=DEFAULT_FONT_WEIGHT):
+    """Load variable fonts at an explicit weight; static files keep their face."""
     resolved_path = str(font_path or get_settings().paths.font_file)
-    cache_key = (resolved_path, size)
+    cache_key = (resolved_path, size, weight)
     if cache_key not in font_cache:
-        font_cache[cache_key] = ImageFont.truetype(resolved_path, size)
+        font = ImageFont.truetype(resolved_path, size)
+        try:
+            axes = font.get_variation_axes()
+        except OSError:
+            # FreeType reports static fonts as having no variation axes.
+            axes = []
+        values = [axis["default"] for axis in axes]
+        for index, axis in enumerate(axes):
+            if axis["name"] in (b"Weight", "Weight"):
+                values[index] = max(axis["minimum"], min(weight, axis["maximum"]))
+                font.set_variation_by_axes(values)
+                break
+        font_cache[cache_key] = font
     return font_cache[cache_key]
 
 
