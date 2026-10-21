@@ -2,19 +2,17 @@ import importlib.util
 import unittest
 from typing import get_args
 
-
 PYDANTIC_AVAILABLE = importlib.util.find_spec("pydantic") is not None
 
 if PYDANTIC_AVAILABLE:
-    from pydantic import ValidationError
-
     from image_translation.contracts import (
-        UrlTranslationRequest,
         TranslationItem,
         TranslationLanguage,
         TranslationResult,
+        UrlTranslationRequest,
     )
     from image_translation.utils.translation_prompts import AUTO_TRANSLATION_TARGETS
+    from pydantic import ValidationError
 
 
 @unittest.skipUnless(PYDANTIC_AVAILABLE, "pydantic is not installed")
@@ -51,7 +49,13 @@ class TranslationContractsTest(unittest.TestCase):
             )
 
     def test_request_rejects_non_url_and_storage_fields(self):
-        for value in ("../secret.png", "images/a.png", "file:///tmp/a.png", "http://user:pass@example.com/a.png", "https://example.com/a.png#fragment"):
+        for value in (
+            "../secret.png",
+            "images/a.png",
+            "file:///tmp/a.png",
+            "http://user:pass@example.com/a.png",
+            "https://example.com/a.png#fragment",
+        ):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 UrlTranslationRequest(image_url=value)
         with self.assertRaises(ValidationError):
@@ -75,7 +79,16 @@ class TranslationContractsTest(unittest.TestCase):
         payload = result.model_dump(mode="json")
         self.assertEqual(
             set(payload),
-            {"status", "request_id", "source_url", "translated_url", "data", "duration_ms"},
+            {
+                "status",
+                "request_id",
+                "source_url",
+                "translated_url",
+                "data",
+                "duration_ms",
+                "files",
+                "source_files",
+            },
         )
         self.assertEqual(payload["request_id"], "request-1")
 

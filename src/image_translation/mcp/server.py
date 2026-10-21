@@ -6,23 +6,24 @@ import asyncio
 from typing import Annotated, Literal, Protocol
 
 import httpx
-
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
-from image_translation.errors import ImageTranslationError
-
+from image_translation.clients.file_service_client import FileServiceError
 from image_translation.contracts import (
-    UrlTranslationRequest,
     TranslationLanguage,
     TranslationResult,
+    UrlTranslationRequest,
 )
+from image_translation.errors import ImageTranslationError
 
 
 class TranslationService(Protocol):
-    async def translate_url(self, image_url: str, language: str = "en_zh", segment: bool = False) -> TranslationResult: ...
+    async def translate_url(
+        self, image_url: str, language: str = "en_zh", segment: bool = False
+    ) -> TranslationResult: ...
 
 
 class TranslationDryRunResult(BaseModel):
@@ -105,7 +106,8 @@ def create_mcp_server(
         image_url: Annotated[
             str,
             Field(
-                min_length=1, max_length=4096,
+                min_length=1,
+                max_length=4096,
                 description="Complete HTTP(S) image URL, including signed query parameters when needed. Accepts public images or the configured OSS file service; no bucket/key or local paths.",
                 json_schema_extra={"format": "uri"},
             ),
@@ -154,8 +156,10 @@ def create_mcp_server(
 
         try:
             async with concurrency:
-                result = await registry.get().translate_url(str(command.image_url), command.language, command.segment)
-        except (ImageTranslationError, TimeoutError) as exc:
+                result = await registry.get().translate_url(
+                    str(command.image_url), command.language, command.segment
+                )
+        except (ImageTranslationError, TimeoutError, FileServiceError) as exc:
             raise ToolError(str(exc)) from exc
         except httpx.HTTPError as exc:
             raise ToolError("Upstream service request failed") from exc

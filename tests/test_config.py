@@ -6,7 +6,6 @@ from unittest.mock import patch
 
 from image_translation.config import ConfigurationError, get_settings
 
-
 EXAMPLE_ENV = Path(__file__).resolve().parents[1] / ".env.example"
 
 
@@ -35,10 +34,6 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(
             settings.llm.translation_url,
             "http://127.0.0.1:5051/api/inference/qwen_translate",
-        )
-        self.assertEqual(
-            settings.oss.file_url("source", "nested/image.jpg"),
-            "http://127.0.0.1:5000/file/source/nested/image.jpg",
         )
         self.assertTrue(settings.prompts.translate_zh_en.endswith("\n"))
         self.assertIn("English", settings.prompts.translate_any_en)
@@ -83,15 +78,11 @@ class SettingsTest(unittest.TestCase):
                 get_settings.cache_clear()
                 with self.assertRaisesRegex(ConfigurationError, "API_BINARY_TOKEN"):
                     get_settings()
-            with patch.dict(os.environ, {"API_BINARY_ENABLED": "true", "API_BINARY_TOKEN": "secret"}):
+            with patch.dict(
+                os.environ, {"API_BINARY_ENABLED": "true", "API_BINARY_TOKEN": "secret"}
+            ):
                 get_settings.cache_clear()
                 self.assertTrue(get_settings().api.binary_enabled)
-
-    def test_public_file_url_preserves_proxy_prefix_and_escapes_keys(self):
-        with patch.dict(os.environ, {"IMAGE_TRANSLATION_ENV_FILE": str(EXAMPLE_ENV), "OSS_PUBLIC_BASE_URL": "https://files.example.com/storage"}, clear=True):
-            get_settings.cache_clear()
-            settings = get_settings()
-        self.assertEqual(settings.oss.public_file_url("results", "folder/a b?#.png"), "https://files.example.com/storage/file/results/folder/a%20b%3F%23.png")
 
     def test_process_environment_overrides_dotenv(self):
         env = {

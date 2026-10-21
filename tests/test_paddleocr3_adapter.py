@@ -1,7 +1,6 @@
 import unittest
 
 import numpy as np
-
 from image_translation.components.ocr.paddleocr3_adapter import (
     paddleocr_detection_boxes,
     paddleocr_results_to_legacy,

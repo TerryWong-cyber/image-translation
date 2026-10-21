@@ -13,8 +13,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Mapping, cast
-from urllib.parse import quote, urljoin, urlparse
-
+from urllib.parse import urljoin, urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -50,13 +49,17 @@ def _parse_env_file(path: Path) -> dict[str, str]:
         try:
             parsed = shlex.split(raw_value, comments=True, posix=True)
         except ValueError as exc:
-            raise ConfigurationError(f"Invalid dotenv value at {path}:{line_number}: {exc}") from exc
+            raise ConfigurationError(
+                f"Invalid dotenv value at {path}:{line_number}: {exc}"
+            ) from exc
         values[key] = " ".join(parsed) if parsed else ""
     return values
 
 
 def _environment() -> dict[str, str]:
-    env_file = Path(os.environ.get("IMAGE_TRANSLATION_ENV_FILE", PROJECT_ROOT / ".env")).expanduser()
+    env_file = Path(
+        os.environ.get("IMAGE_TRANSLATION_ENV_FILE", PROJECT_ROOT / ".env")
+    ).expanduser()
     values = _parse_env_file(env_file)
     values.update(os.environ)
     return values
@@ -167,14 +170,6 @@ def _route(env: Mapping[str, str], name: str) -> str:
     return value
 
 
-def _oss_file_route(env: Mapping[str, str], name: str) -> str:
-    value = _route(env, name)
-    missing = {placeholder for placeholder in ("{bucket}", "{key}") if placeholder not in value}
-    if missing:
-        raise ConfigurationError(f"{name} must contain placeholders: {', '.join(sorted(missing))}")
-    return value
-
-
 @dataclass(frozen=True)
 class ServerSettings:
     app: str
@@ -187,6 +182,7 @@ class ServerSettings:
 @dataclass(frozen=True)
 class ApiSettings:
     image_translate_path: str
+    url_import_allowed_hosts: tuple[str, ...] = ()
     binary_enabled: bool = False
     binary_token: str = ""
     max_image_bytes: int = 20 * 1024 * 1024
@@ -243,30 +239,6 @@ class LlmSettings:
     @property
     def recognition_batch_url(self) -> str:
         return _url(self.api_base_url, self.recognition_batch_endpoint)
-
-
-@dataclass(frozen=True)
-class OssSettings:
-    base_url: str
-    upload_endpoint: str
-    file_endpoint: str
-    default_bucket: str = "image-translations"
-    public_base_url: str = ""
-
-    def upload_url(self) -> str:
-        return _url(self.base_url, self.upload_endpoint)
-
-    def file_url(self, bucket_name: str, file_key: str) -> str:
-        endpoint = self.file_endpoint.format(
-            bucket=quote(bucket_name, safe=""), key=quote(file_key, safe="/"),
-        )
-        return _url(self.base_url, endpoint)
-
-    def public_file_url(self, bucket_name: str, file_key: str) -> str:
-        endpoint = self.file_endpoint.format(
-            bucket=quote(bucket_name, safe=""), key=quote(file_key, safe="/"),
-        )
-        return _url(self.public_base_url or self.base_url, endpoint)
 
 
 @dataclass(frozen=True)
@@ -345,7 +317,6 @@ class Settings:
     mcp: McpSettings
     http: HttpSettings
     llm: LlmSettings
-    oss: OssSettings
     ocr: OcrSettings
     text_translation: TextTranslationSettings
     prompts: PromptSettings
@@ -398,21 +369,29 @@ def _no_translate_terms(path: Path) -> tuple[str, ...]:
     try:
         raw_data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise ConfigurationError(f"Invalid JSON in NO_TRANSLATE_TERMS_FILE {path}: {exc.msg}") from exc
+        raise ConfigurationError(
+            f"Invalid JSON in NO_TRANSLATE_TERMS_FILE {path}: {exc.msg}"
+        ) from exc
 
     categories = raw_data.get("categories") if isinstance(raw_data, dict) else None
     if not isinstance(categories, dict):
-        raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE must contain a 'categories' object: {path}")
+        raise ConfigurationError(
+            f"NO_TRANSLATE_TERMS_FILE must contain a 'categories' object: {path}"
+        )
 
     terms: list[str] = []
     for category, category_terms in categories.items():
         if not isinstance(category, str) or not category.strip():
-            raise ConfigurationError(f"NO_TRANSLATE_TERMS_FILE has an invalid category name: {path}")
+            raise ConfigurationError(
+                f"NO_TRANSLATE_TERMS_FILE has an invalid category name: {path}"
+            )
         if not isinstance(category_terms, list):
             raise ConfigurationError(f"Category {category!r} must be a list in {path}")
         for term in category_terms:
             if not isinstance(term, str) or not term.strip():
-                raise ConfigurationError(f"Category {category!r} contains an invalid term in {path}")
+                raise ConfigurationError(
+                    f"Category {category!r} contains an invalid term in {path}"
+                )
             if term not in terms:
                 terms.append(term)
 
@@ -456,23 +435,57 @@ def _prompt_settings(env: Mapping[str, str]) -> PromptSettings:
         language_detection=_prompt_value(vision_document, "language_detection", vision_file),
         translate_en_zh=_prompt_value(translations_document, "translate_en_zh", translations_file),
         translate_zh_en=_prompt_value(translations_document, "translate_zh_en", translations_file),
-        translate_any_zh=_prompt_value(translations_document, "translate_any_zh", translations_file),
-        translate_any_zh_cn=_prompt_value(translations_document, "translate_any_zh_cn", translations_file),
-        translate_any_zh_tw=_prompt_value(translations_document, "translate_any_zh_tw", translations_file),
-        translate_any_en=_prompt_value(translations_document, "translate_any_en", translations_file),
-        translate_any_ko=_prompt_value(translations_document, "translate_any_ko", translations_file),
-        translate_any_ja=_prompt_value(translations_document, "translate_any_ja", translations_file),
-        translate_any_th=_prompt_value(translations_document, "translate_any_th", translations_file),
-        translate_any_fr=_prompt_value(translations_document, "translate_any_fr", translations_file),
-        translate_any_ar=_prompt_value(translations_document, "translate_any_ar", translations_file),
-        translate_any_de=_prompt_value(translations_document, "translate_any_de", translations_file),
-        translate_any_ru=_prompt_value(translations_document, "translate_any_ru", translations_file),
-        translate_any_nl=_prompt_value(translations_document, "translate_any_nl", translations_file),
-        translate_any_pt=_prompt_value(translations_document, "translate_any_pt", translations_file),
-        translate_any_es=_prompt_value(translations_document, "translate_any_es", translations_file),
-        translate_any_it=_prompt_value(translations_document, "translate_any_it", translations_file),
-        translate_any_vi=_prompt_value(translations_document, "translate_any_vi", translations_file),
-        translate_any_id=_prompt_value(translations_document, "translate_any_id", translations_file),
+        translate_any_zh=_prompt_value(
+            translations_document, "translate_any_zh", translations_file
+        ),
+        translate_any_zh_cn=_prompt_value(
+            translations_document, "translate_any_zh_cn", translations_file
+        ),
+        translate_any_zh_tw=_prompt_value(
+            translations_document, "translate_any_zh_tw", translations_file
+        ),
+        translate_any_en=_prompt_value(
+            translations_document, "translate_any_en", translations_file
+        ),
+        translate_any_ko=_prompt_value(
+            translations_document, "translate_any_ko", translations_file
+        ),
+        translate_any_ja=_prompt_value(
+            translations_document, "translate_any_ja", translations_file
+        ),
+        translate_any_th=_prompt_value(
+            translations_document, "translate_any_th", translations_file
+        ),
+        translate_any_fr=_prompt_value(
+            translations_document, "translate_any_fr", translations_file
+        ),
+        translate_any_ar=_prompt_value(
+            translations_document, "translate_any_ar", translations_file
+        ),
+        translate_any_de=_prompt_value(
+            translations_document, "translate_any_de", translations_file
+        ),
+        translate_any_ru=_prompt_value(
+            translations_document, "translate_any_ru", translations_file
+        ),
+        translate_any_nl=_prompt_value(
+            translations_document, "translate_any_nl", translations_file
+        ),
+        translate_any_pt=_prompt_value(
+            translations_document, "translate_any_pt", translations_file
+        ),
+        translate_any_es=_prompt_value(
+            translations_document, "translate_any_es", translations_file
+        ),
+        translate_any_it=_prompt_value(
+            translations_document, "translate_any_it", translations_file
+        ),
+        translate_any_vi=_prompt_value(
+            translations_document, "translate_any_vi", translations_file
+        ),
+        translate_any_id=_prompt_value(
+            translations_document, "translate_any_id", translations_file
+        ),
     )
 
 
@@ -545,9 +558,6 @@ def get_settings() -> Settings:
     binary_token = env.get("API_BINARY_TOKEN", "").strip()
     if binary_enabled and not binary_token:
         raise ConfigurationError("API_BINARY_TOKEN is required when API_BINARY_ENABLED=true")
-    default_bucket = env.get("OSS_DEFAULT_BUCKET", "image-translations").strip()
-    if not default_bucket or len(default_bucket) > 255 or any(c in default_bucket for c in ("/", "\\", "\x00")):
-        raise ConfigurationError("OSS_DEFAULT_BUCKET must be a single non-empty bucket name")
     return Settings(
         server=ServerSettings(
             app=_required(env, "SERVER_APP"),
@@ -555,16 +565,25 @@ def get_settings() -> Settings:
             port=_int(env, "SERVER_PORT", minimum=1, maximum=65535),
             reload=_bool(env, "SERVER_RELOAD"),
             reload_dirs=tuple(
-                item.strip() for item in _required(env, "SERVER_RELOAD_DIRS").split(",") if item.strip()
+                item.strip()
+                for item in _required(env, "SERVER_RELOAD_DIRS").split(",")
+                if item.strip()
             ),
         ),
         api=ApiSettings(
             image_translate_path=_route(env, "API_IMAGE_TRANSLATE_PATH"),
+            url_import_allowed_hosts=tuple(
+                host.strip()
+                for host in env.get("API_URL_IMPORT_ALLOWED_HOSTS", "").split(",")
+                if host.strip()
+            ),
             binary_enabled=binary_enabled,
             binary_token=binary_token,
             max_image_bytes=_optional_int(env, "API_MAX_IMAGE_BYTES", 20 * 1024 * 1024, minimum=1),
             max_image_pixels=_optional_int(env, "API_MAX_IMAGE_PIXELS", 40_000_000, minimum=1),
-            download_timeout_seconds=_optional_int(env, "API_DOWNLOAD_TIMEOUT_SECONDS", 15, minimum=1),
+            download_timeout_seconds=_optional_int(
+                env, "API_DOWNLOAD_TIMEOUT_SECONDS", 15, minimum=1
+            ),
             max_redirects=_optional_int(env, "API_MAX_REDIRECTS", 3, minimum=0, maximum=10),
         ),
         mcp=McpSettings(
@@ -616,13 +635,6 @@ def get_settings() -> Settings:
             recognition_timeout_seconds=_float(env, "LLM_RECOGNITION_TIMEOUT_SECONDS"),
             max_new_tokens=_int(env, "LLM_MAX_NEW_TOKENS", minimum=1),
             batch_size=_int(env, "LLM_BATCH_SIZE", minimum=1),
-        ),
-        oss=OssSettings(
-            base_url=_absolute_url(env, "OSS_BASE_URL"),
-            upload_endpoint=_route(env, "OSS_UPLOAD_ENDPOINT"),
-            file_endpoint=_oss_file_route(env, "OSS_FILE_ENDPOINT"),
-            default_bucket=default_bucket,
-            public_base_url=_absolute_url(env, "OSS_PUBLIC_BASE_URL") if env.get("OSS_PUBLIC_BASE_URL", "").strip() else "",
         ),
         ocr=_ocr_settings(env),
         text_translation=TextTranslationSettings(

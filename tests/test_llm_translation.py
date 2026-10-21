@@ -11,10 +11,7 @@ from image_translation.utils.translation_prompts import (
 class TranslationPromptTest(unittest.TestCase):
     def test_resolves_every_supported_auto_detect_target(self):
         prompts = SimpleNamespace(
-            **{
-                f"translate_any_{code}": f"prompt-{code}"
-                for code in AUTO_TRANSLATION_TARGETS
-            }
+            **{f"translate_any_{code}": f"prompt-{code}" for code in AUTO_TRANSLATION_TARGETS}
         )
 
         for target_code in AUTO_TRANSLATION_TARGETS:

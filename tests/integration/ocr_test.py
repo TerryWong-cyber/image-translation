@@ -1,10 +1,9 @@
 import os
-import cv2
+
 import numpy as np
+from image_translation.config import get_settings
 from paddleocr import PaddleOCR
 from PIL import Image, ImageDraw
-
-from image_translation.config import get_settings
 
 
 # 这个函数保持不变
@@ -23,9 +22,9 @@ def adjust_box_heights(ocr_result, height_tolerance_ratio=0.2):
         ys = [p[1] for p in box]
         height = max(ys) - min(ys)
         center_y = np.mean(ys)
-        boxes_with_info.append({'original_index': i, 'height': height, 'center_y': center_y})
+        boxes_with_info.append({"original_index": i, "height": height, "center_y": center_y})
 
-    boxes_with_info.sort(key=lambda x: x['height'])
+    boxes_with_info.sort(key=lambda x: x["height"])
 
     groups = []
     if not boxes_with_info:
@@ -33,8 +32,8 @@ def adjust_box_heights(ocr_result, height_tolerance_ratio=0.2):
 
     current_group = [boxes_with_info[0]]
     for i in range(1, len(boxes_with_info)):
-        base_height = current_group[0]['height']
-        if abs(boxes_with_info[i]['height'] - base_height) < base_height * height_tolerance_ratio:
+        base_height = current_group[0]["height"]
+        if abs(boxes_with_info[i]["height"] - base_height) < base_height * height_tolerance_ratio:
             current_group.append(boxes_with_info[i])
         else:
             groups.append(current_group)
@@ -44,13 +43,14 @@ def adjust_box_heights(ocr_result, height_tolerance_ratio=0.2):
     new_lines = [None] * len(lines)
     print("\n--- 开始修正边界框高度 ---")
     for group in groups:
-        group_heights = [b['height'] for b in group]
+        group_heights = [b["height"] for b in group]
         avg_height = np.median(group_heights)
         print(
-            f"找到一组 {len(group)} 个框, 原始高度范围: [{min(group_heights):.2f} - {max(group_heights):.2f}], 修正为统一高度: {avg_height:.2f}")
+            f"找到一组 {len(group)} 个框, 原始高度范围: [{min(group_heights):.2f} - {max(group_heights):.2f}], 修正为统一高度: {avg_height:.2f}"
+        )
 
         for box_info in group:
-            original_index = box_info['original_index']
+            original_index = box_info["original_index"]
             original_line = lines[original_index]
             original_box = original_line[0]
             center_y = np.mean([p[1] for p in original_box])
@@ -60,7 +60,7 @@ def adjust_box_heights(ocr_result, height_tolerance_ratio=0.2):
                 [original_box[0][0], new_top_y],
                 [original_box[1][0], new_top_y],
                 [original_box[2][0], new_bottom_y],
-                [original_box[3][0], new_bottom_y]
+                [original_box[3][0], new_bottom_y],
             ]
             new_lines[original_index] = [new_box, original_line[1]]
 
@@ -89,7 +89,8 @@ def draw_ocr_boxes(image_path, output_path, ocr_result):
         lines = ocr_result[0]
 
         for i, line in enumerate(lines):
-            if line is None: continue
+            if line is None:
+                continue
             box = line[0]
             text_info = line[1]
             text = text_info[0]
@@ -98,7 +99,7 @@ def draw_ocr_boxes(image_path, output_path, ocr_result):
             print(f"框 {i + 1}: 文字 = '{text}', 置信度 = {confidence:.4f}")
 
             int_box = [(int(p[0]), int(p[1])) for p in box]
-            draw.polygon(int_box, outline='lime', width=2)
+            draw.polygon(int_box, outline="lime", width=2)
 
     image.save(output_path)
     print("\n------------------------------------")
@@ -127,9 +128,10 @@ def draw_det_boxes(image_path, output_path, ocr_result):
 
         # 1. 先绘制所有框
         for i, box in enumerate(boxes):
-            if box is None: continue
+            if box is None:
+                continue
             int_box = [tuple(map(int, p)) for p in box]  # 更简洁的转换方式
-            draw.polygon(int_box, outline='lime', width=2)
+            draw.polygon(int_box, outline="lime", width=2)
 
     image.save(output_path)
     print("\n------------------------------------")
@@ -151,7 +153,7 @@ def batch_process_images(input_folder, output_folder, ocr_engine):
     print(f"结果将保存到: {output_folder}")
 
     # 支持的图片格式
-    supported_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')
+    supported_extensions = (".png", ".jpg", ".jpeg", ".bmp", ".tiff")
 
     # 获取所有图片文件
     image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(supported_extensions)]
@@ -164,7 +166,9 @@ def batch_process_images(input_folder, output_folder, ocr_engine):
 
     # 循环处理每一张图片
     for i, filename in enumerate(image_files):
-        print(f"\n================== [ {i + 1}/{len(image_files)} ] 正在处理: {filename} ==================")
+        print(
+            f"\n================== [ {i + 1}/{len(image_files)} ] 正在处理: {filename} =================="
+        )
 
         # 构建完整的文件路径
         input_path = os.path.join(input_folder, filename)

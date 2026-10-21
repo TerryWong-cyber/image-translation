@@ -1,12 +1,12 @@
-import unittest
 import tempfile
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
 from image_translation.components.ocr.device import (
+    _local_model_name,
     paddleocr_device,
     paddleocr_init_kwargs,
-    _local_model_name,
 )
 from image_translation.config import OcrDevice, OcrSettings
 
@@ -99,7 +99,13 @@ class PaddleOcrDeviceTest(unittest.TestCase):
             model_dir = Path(temp_dir)
             with self.assertRaisesRegex(RuntimeError, "Cannot read Paddle model name"):
                 _local_model_name(model_dir)
-            for metadata in ("{}", "Global: null", "Global: [", "Global:\n  model_name: null", "Global:\n  model_name: ''"):
+            for metadata in (
+                "{}",
+                "Global: null",
+                "Global: [",
+                "Global:\n  model_name: null",
+                "Global:\n  model_name: ''",
+            ):
                 with self.subTest(metadata=metadata):
                     (model_dir / "inference.yml").write_text(metadata, encoding="utf-8")
                     with self.assertRaises(RuntimeError):

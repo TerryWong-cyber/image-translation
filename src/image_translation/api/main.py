@@ -10,24 +10,27 @@ from uuid import uuid4
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from mcp.server.transport_security import TransportSecuritySettings
 
-from image_translation.clients.oss_client import oss_client_instance
+from image_translation.clients.file_service_client import FileServiceError
 from image_translation.config import get_settings
-from image_translation.contracts import TranslationLanguage, TranslationResult, UrlTranslationRequest
+from image_translation.contracts import (
+    TranslationLanguage,
+    TranslationResult,
+    UrlTranslationRequest,
+)
 from image_translation.errors import (
-    InvalidImageError,
-    ImageTooLargeError,
     ImageDownloadError,
-    OcrTimeoutError,
-    ModelUpstreamError,
+    ImageTooLargeError,
+    InvalidImageError,
     ModelTimeoutError,
+    ModelUpstreamError,
+    OcrTimeoutError,
 )
 from image_translation.mcp import TranslationServiceRegistry, create_mcp_server
 from image_translation.runtime import OcrRuntime
 from image_translation.services import ImageTranslationService
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,22 +65,10 @@ async def lifespan(app: FastAPI):
 
     logger.info("Starting image translation service")
     ocr_runtime = OcrRuntime(settings.ocr)
-    limits = httpx.Limits(
-        max_connections=settings.http.max_connections,
-        max_keepalive_connections=settings.http.max_keepalive_connections,
-        keepalive_expiry=settings.http.keepalive_expiry_seconds,
-    )
-    shared_client = httpx.AsyncClient(
-        timeout=settings.http.request_timeout_seconds,
-        limits=limits,
-    )
-    oss_client_instance.set_shared_client(shared_client)
-
     try:
         await ocr_runtime.start()
         app.state.ocr_runtime = ocr_runtime
         translation_service = ImageTranslationService(
-            oss_client=oss_client_instance,
             ocr_service=ocr_runtime,
         )
         app.state.translation_service = translation_service
@@ -94,7 +85,6 @@ async def lifespan(app: FastAPI):
             del app.state.translation_service
         if hasattr(app.state, "ocr_runtime"):
             del app.state.ocr_runtime
-        await oss_client_instance.close_shared_client()
         await ocr_runtime.close()
         logger.info("Image translation service stopped")
 
@@ -124,11 +114,21 @@ async def health_ready(request: Request):
 
 
 def translation_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, FileServiceError):
+        return JSONResponse(
+            status_code=exc.status,
+            content={
+                "error": exc.code,
+                **({"file_id": exc.file_id} if hasattr(exc, "file_id") else {}),
+            },
+        )
     if isinstance(exc, ImageTooLargeError):
         code = 413
     elif isinstance(exc, InvalidImageError):
         code = 400
-    elif isinstance(exc, (ModelTimeoutError, OcrTimeoutError, TimeoutError, httpx.TimeoutException)):
+    elif isinstance(
+        exc, (ModelTimeoutError, OcrTimeoutError, TimeoutError, httpx.TimeoutException)
+    ):
         code = 504
     elif isinstance(exc, (ModelUpstreamError, ImageDownloadError, httpx.HTTPError)):
         code = 502
@@ -145,8 +145,14 @@ async def process_image_translate(body: UrlTranslationRequest, request: Request)
     service: ImageTranslationService = request.app.state.translation_service
     request_id = str(uuid4())
     try:
-        result = await service.translate_url(str(body.image_url), body.language, body.segment, request_id=request_id)
-        return JSONResponse(status_code=200, content=result.model_dump(mode="json"), headers={"X-Request-ID": request_id})
+        result = await service.translate_url(
+            str(body.image_url), body.language, body.segment, request_id=request_id
+        )
+        return JSONResponse(
+            status_code=200,
+            content=result.model_dump(mode="json"),
+            headers={"X-Request-ID": request_id},
+        )
     except Exception as exc:
         response = translation_error(exc)
         response.headers["X-Request-ID"] = request_id
@@ -160,12 +166,15 @@ async def process_binary_translate(
 ):
     """Internal raw-image endpoint. Authentication precedes reading the body."""
     if not secrets.compare_digest(
-        request.headers.get("authorization", "").encode(), f"Bearer {settings.api.binary_token}".encode()
+        request.headers.get("authorization", "").encode(),
+        f"Bearer {settings.api.binary_token}".encode(),
     ):
         raise HTTPException(status_code=401, detail="Invalid internal API token")
     media_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
     if not media_type.startswith("image/") and media_type != "application/octet-stream":
-        raise HTTPException(status_code=415, detail="Send raw image bytes with an image Content-Type")
+        raise HTTPException(
+            status_code=415, detail="Send raw image bytes with an image Content-Type"
+        )
     content = bytearray()
     request_id = str(uuid4())
     try:
@@ -174,9 +183,16 @@ async def process_binary_translate(
                 raise ImageTooLargeError("Image exceeds the configured byte limit")
             content.extend(chunk)
         service: ImageTranslationService = request.app.state.translation_service
-        result = await service.translate_bytes(bytes(content), language, segment, content_type=media_type)
-        return Response(content=result.content, media_type=result.content_type,
-                        headers={"Cache-Control": "no-store", "X-Request-ID": request_id})
+        result, _ = await service.persist_and_translate(
+            bytes(content), language, segment, content_type=media_type, request_id=request_id
+        )
+        from image_translation.clients.file_service_client import FileServiceClient
+
+        response = await FileServiceClient().content_response(result.files[0]["file_id"])
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-File-ID"] = result.files[0]["file_id"]
+        response.headers["X-Source-File-ID"] = result.source_files[0]["file_id"]
+        return response
     except Exception as exc:
         response = translation_error(exc)
         response.headers["X-Request-ID"] = request_id
@@ -185,8 +201,10 @@ async def process_binary_translate(
 
 if settings.api.binary_enabled:
     app.add_api_route(
-        "/internal/image-translate", process_binary_translate,
-        methods=["POST"], include_in_schema=False,
+        "/internal/image-translate",
+        process_binary_translate,
+        methods=["POST"],
+        include_in_schema=False,
     )
 
 

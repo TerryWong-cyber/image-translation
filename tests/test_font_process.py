@@ -4,11 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-
-FONT_DEPS_AVAILABLE = all(
-    importlib.util.find_spec(name) is not None
-    for name in ("numpy", "PIL")
-)
+FONT_DEPS_AVAILABLE = all(importlib.util.find_spec(name) is not None for name in ("numpy", "PIL"))
 
 if FONT_DEPS_AVAILABLE:
     from image_translation.components.font import font_process

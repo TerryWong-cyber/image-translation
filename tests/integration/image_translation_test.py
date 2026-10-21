@@ -1,12 +1,12 @@
 import base64
+import os
 import sys
 import time
-import os
+
 import cv2
 import numpy as np
 from paddleocr import PaddleOCR
 from PIL import Image, ImageDraw
-import concurrent.futures
 
 current_file_path = os.path.abspath(__file__)
 pic_translate_dir = os.path.dirname(current_file_path)
@@ -42,9 +42,10 @@ def draw_det_boxes(image_path, output_path, ocr_result):
 
         # 1. 先绘制所有框
         for i, box in enumerate(boxes):
-            if box is None: continue
+            if box is None:
+                continue
             int_box = [tuple(map(int, p)) for p in box]  # 更简洁的转换方式
-            draw.polygon(int_box, outline='lime', width=2)
+            draw.polygon(int_box, outline="lime", width=2)
 
     image.save(output_path)
     print("\n------------------------------------")
@@ -76,29 +77,39 @@ def det_to_ocr_result(image_path, det_result):
         src_pts = np.array(box, dtype="float32")
 
         # (透视变换代码与原来相同，此处省略...)
-        width_top = np.sqrt(((src_pts[0][0] - src_pts[1][0]) ** 2) + ((src_pts[0][1] - src_pts[1][1]) ** 2))
-        width_bottom = np.sqrt(((src_pts[2][0] - src_pts[3][0]) ** 2) + ((src_pts[2][1] - src_pts[3][1]) ** 2))
+        width_top = np.sqrt(
+            ((src_pts[0][0] - src_pts[1][0]) ** 2) + ((src_pts[0][1] - src_pts[1][1]) ** 2)
+        )
+        width_bottom = np.sqrt(
+            ((src_pts[2][0] - src_pts[3][0]) ** 2) + ((src_pts[2][1] - src_pts[3][1]) ** 2)
+        )
         max_width = int(max(width_top, width_bottom))
 
-        height_left = np.sqrt(((src_pts[0][0] - src_pts[3][0]) ** 2) + ((src_pts[0][1] - src_pts[3][1]) ** 2))
-        height_right = np.sqrt(((src_pts[1][0] - src_pts[2][0]) ** 2) + ((src_pts[1][1] - src_pts[2][1]) ** 2))
+        height_left = np.sqrt(
+            ((src_pts[0][0] - src_pts[3][0]) ** 2) + ((src_pts[0][1] - src_pts[3][1]) ** 2)
+        )
+        height_right = np.sqrt(
+            ((src_pts[1][0] - src_pts[2][0]) ** 2) + ((src_pts[1][1] - src_pts[2][1]) ** 2)
+        )
         max_height = int(max(height_left, height_right))
 
         if max_width == 0 or max_height == 0:
             print(f"警告: 第 {i + 1} 个裁切区域尺寸为0，已跳过。")
             continue
 
-        dst_pts = np.array([[0, 0], [max_width - 1, 0], [max_width - 1, max_height - 1], [0, max_height - 1]],
-                           dtype="float32")
+        dst_pts = np.array(
+            [[0, 0], [max_width - 1, 0], [max_width - 1, max_height - 1], [0, max_height - 1]],
+            dtype="float32",
+        )
         M = cv2.getPerspectiveTransform(src_pts, dst_pts)
         warped_image = cv2.warpPerspective(image, M, (max_width, max_height))
 
-        _, buffer = cv2.imencode('.png', warped_image)
+        _, buffer = cv2.imencode(".png", warped_image)
         if not _:
             print(f"警告: 无法编码第 {i + 1} 个裁切区域。")
             continue
 
-        base64_string = base64.b64encode(buffer).decode('utf-8')
+        base64_string = base64.b64encode(buffer).decode("utf-8")
         base64_images.append(base64_string)
 
     if not base64_images:
@@ -136,7 +147,7 @@ def batch_translate_images(input_folder, output_folder, ocr_engine):
     print(f"结果将保存到: {output_folder}")
 
     # 支持的图片格式
-    supported_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')
+    supported_extensions = (".png", ".jpg", ".jpeg", ".bmp", ".tiff")
 
     # 获取所有图片文件
     image_files = [f for f in os.listdir(input_folder) if f.lower().endswith(supported_extensions)]
@@ -150,7 +161,9 @@ def batch_translate_images(input_folder, output_folder, ocr_engine):
     # 循环处理每一张图片
     for i, filename in enumerate(image_files):
         st = time.time()
-        print(f"\n================== [ {i + 1}/{len(image_files)} ] 正在处理: {filename} ==================")
+        print(
+            f"\n================== [ {i + 1}/{len(image_files)} ] 正在处理: {filename} =================="
+        )
 
         # 构建完整的文件路径
         input_path = os.path.join(input_folder, filename)

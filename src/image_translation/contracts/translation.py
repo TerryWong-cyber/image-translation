@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-
 TranslationLanguage = Literal[
     "en_zh",
     "zh_en",
@@ -44,6 +43,8 @@ class TranslationResult(BaseModel):
     status: Literal["success"] = "success"
     request_id: str
     source_url: str
+    source_files: list[dict] = Field(default_factory=list)
+    files: list[dict] = Field(default_factory=list)
     translated_url: str
     data: list[TranslationItem]
     duration_ms: int = Field(ge=0)

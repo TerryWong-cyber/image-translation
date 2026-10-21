@@ -26,31 +26,14 @@ curl -X POST http://127.0.0.1:8000/llm/image-translate \
 }
 ```
 
-The service downloads the image, translates it, and uploads the result to
-`OSS_DEFAULT_BUCKET`, using a unique key per request. The response is sent only
-after upload succeeds. The source URL may be a public image, a signed URL, or a
-complete file URL on the configured OSS service. No bucket/key fields are
-accepted by this REST API; old bucket/key REST requests must migrate to complete
-URLs. MCP follows the same URL contract; no OSS-reference compatibility tool
-is exposed.
-
-Pre-create `OSS_DEFAULT_BUCKET` with write access. Set `OSS_PUBLIC_BASE_URL` to
-the externally reachable file-service base URL (including any proxy base path).
-The configured `OSS_FILE_ENDPOINT` is appended to it with URL-escaped bucket/key
-components. If unset, it falls back to `OSS_BASE_URL`, which is only suitable when
-that address is also reachable by callers. Result links use the file service's
-existing access policy; this service does not create signed output links or
-make private buckets public. Configure a caller-accessible download route and
-any result retention/lifecycle policy on the OSS service.
-
-Downloads have a total deadline, a byte limit, and a redirect limit. Each public
-URL/redirect resolves only to global IP addresses; connections are pinned to the
-checked IP while retaining HTTP Host and TLS SNI. Private addresses are allowed
-only for the configured `OSS_BASE_URL` origin and file-route prefix. Signed input
-queries are preserved, and no environment proxy or authorization header is
-forwarded. HTTP-level compressed responses are rejected to keep the byte bound
-predictable. Private OSS requiring additional credentials is not supported;
-provide a signed input URL or an accessible OSS file route.
+The service downloads the source with a byte limit and total deadline, uploads a separate
+copy to File Service, translates it, then uploads the result. The response includes
+`source_files[]` and `files[]`, each with a UUID `file_id` and a short-lived URL.
+All HTTP(S) inputs follow the same checks, including old object-storage URLs.
+Each redirect is checked and DNS connections are pinned to validated public addresses.
+Explicit private hosts can be allowed with `API_URL_IMPORT_ALLOWED_HOSTS` (CSV).
+Source query strings are preserved; caller credentials and environment proxies are not forwarded.
+Compressed HTTP responses are rejected. Failure to save either file fails the request.
 
 ### Raw image input → raw image output (internal only)
 
@@ -101,7 +84,7 @@ Processing errors also include this header; schema validation (422), binary
 authentication (401), and unsupported media type (415) are rejected before an ID
 is assigned. The service does not connect to a database or store processing
 records. Business task status and history belong to the calling application.
-URL outputs are still uploaded to OSS; binary requests do not persist images.
+Both URL and binary requests persist source and result via File Service. Binary responses expose `X-Source-File-ID` and `X-File-ID`.
 
 ## Runtime configuration
 
@@ -171,7 +154,7 @@ python -m pip install -e '.[cpu,dev]'
 python -m pip check
 ```
 
-Then update the upstream LLM/VLM URLs, OSS URL, font file, and test directories
+Then update the upstream LLM/VLM URLs, File Service URL, font file, and test directories
 in `.env`. Process environment variables override values from the file. To load
 a different file, set `IMAGE_TRANSLATION_ENV_FILE` to its path.
 
@@ -227,7 +210,7 @@ Prepare the production configuration:
 cp .env.production.example .env.production
 ```
 
-Update the LLM/VLM and OSS URLs, public MCP hostname/origins, and choose the
+Update the LLM/VLM and File Service URLs, public MCP hostname/origins, and choose the
 physical GPU exposed to the container:
 
 ```bash
@@ -388,3 +371,8 @@ FastAPI route paths are bound at application startup, so route configuration
 changes require a restart. Uvicorn reload can be enabled locally with
 `SERVER_RELOAD=true`.
 # poll scm test
+
+
+## File Service integration
+
+所有文件持久化与下载均经过 file-service，配置见 [文件服务接入](docs/file-service-integration.md)。
