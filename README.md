@@ -376,3 +376,25 @@ changes require a restart. Uvicorn reload can be enabled locally with
 ## File Service integration
 
 所有文件持久化与下载均经过 file-service，配置见 [文件服务接入](docs/file-service-integration.md)。
+
+
+## 静态翻译工作台 API
+
+`translation-web` 已重构为 Vite + React 静态应用，不再部署前端 Node.js 服务。
+本服务提供 `/api/web/images/`，复用现有图片翻译服务与 File Service 客户端：
+
+| 接口 | 行为 |
+| --- | --- |
+| `POST /api/web/images/upload` | multipart 字段 `file`，JPG/PNG/WEBP，最多 20 MiB；校验真实内容后上传 File Service，返回 `file_id`、`image_url`、`files[]` |
+| `POST /api/web/images/translate` | 原 URL 请求加可选 UUID `file_id`；有 ID 时先续签，再调用已有同步翻译流程 |
+| `GET /api/web/images/files/{file_id}/content?download=true` | 使用服务端身份向 File Service 流式读取；每次检查 ACL，响应 no-store |
+
+依赖新增 `python-multipart`，更新环境后重启 API。服务端 `FILE_SERVICE_BASE_URL`、
+`FILE_SERVICE_TOKEN`、`FILE_SERVICE_STORAGE_NAMESPACE` 沿用现有 File Service 配置。
+不得把 Token 写入前端 VITE 变量。上传不重试；续签失败保留已创建的 `file_id`。
+原 `/llm/image-translate` 和 MCP 契约不变；网页专用可选 `file_id` 不扩展到原生协议。
+新接口沿用部署环境的网关访问控制，不另外提供用户登录或租户身份映射。
+
+Nginx 将 `/translation/api/images/` 代理至 `http://192.168.3.67:8030/api/web/images/`，
+请求体上限 21 MiB，读取超时 240 秒。`translation-web/dist` 由 Nginx 直接提供。
+无需在生产运行 Vinext、Wrangler 或前端 Node.js 服务。GPU/OCR/模型部署方式不变。

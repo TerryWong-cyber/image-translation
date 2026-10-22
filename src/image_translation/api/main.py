@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from mcp.server.transport_security import TransportSecuritySettings
 
+from image_translation.api.web import create_web_router
 from image_translation.clients.file_service_client import FileServiceError
 from image_translation.config import get_settings
 from image_translation.contracts import (
@@ -157,6 +158,9 @@ async def process_image_translate(body: UrlTranslationRequest, request: Request)
         response = translation_error(exc)
         response.headers["X-Request-ID"] = request_id
         return response
+
+
+app.include_router(create_web_router(process_image_translate))
 
 
 async def process_binary_translate(
