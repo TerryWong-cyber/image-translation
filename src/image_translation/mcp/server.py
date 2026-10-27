@@ -11,6 +11,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
+from image_translation.clients.tracking import tracking
 from image_translation.clients.file_service_client import FileServiceError
 from image_translation.contracts import (
     TranslationLanguage,
@@ -76,6 +77,7 @@ def create_mcp_server(
 
     server = MCPServer(
         name="image-translation",
+        middleware=[tracking.mcp_context],
         title="Image Translation",
         description="Translate text embedded in an image from a complete HTTP(S) URL.",
         instructions=(

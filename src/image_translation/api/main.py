@@ -91,6 +91,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+from image_translation.clients.tracking import tracking
+tracking.install(app)
 
 
 @app.get("/health/live", include_in_schema=False)
@@ -211,6 +213,9 @@ if settings.api.binary_enabled:
         include_in_schema=False,
     )
 
+
+from image_translation.api.tasks import create_task_router
+app.include_router(create_task_router(process_image_translate))
 
 if mcp_app is not None:
     # The catch-all mount must stay after every FastAPI route. The MCP sub-app

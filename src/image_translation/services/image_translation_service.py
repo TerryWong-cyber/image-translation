@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
+from image_translation.clients.tracking import tracking
 from image_translation.clients.file_service_client import FileServiceClient, FileServiceSettings
 from image_translation.clients.image_source import ImageSourceClient
 from image_translation.config import get_settings
@@ -93,6 +94,7 @@ class ImageTranslationService:
             [TranslationItem.model_validate(item) for item in raw_items],
         )
 
+    @tracking.tracked("图片翻译")
     async def translate_url(
         self,
         image_url: str,
@@ -116,6 +118,7 @@ class ImageTranslationService:
             update={"duration_ms": max(0, round((time.monotonic() - started_at) * 1000))}
         )
 
+    @tracking.tracked("图片翻译")
     async def persist_and_translate(
         self,
         content,

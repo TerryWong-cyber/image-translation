@@ -398,3 +398,13 @@ changes require a restart. Uvicorn reload can be enabled locally with
 Nginx 将 `/translation/api/images/` 代理至 `http://192.168.3.67:8030/api/web/images/`，
 请求体上限 21 MiB，读取超时 240 秒。`translation-web/dist` 由 Nginx 直接提供。
 无需在生产运行 Vinext、Wrangler 或前端 Node.js 服务。GPU/OCR/模型部署方式不变。
+
+## 跨工具任务管理
+
+可选接入同级 `task-service`。设置 `TASK_SERVICE_BASE_URL`、本服务专用 `TASK_SERVICE_TOKEN` 和`TASK_SERVICE_DATABASE_URL`，或使用任务服务生成的 `.env.task-service`；进程环境优先。未配置时保持独立运行。
+
+业务任务在共用执行边界登记，因此网页和 MCP 不会分别重复登记。状态与待发送快照保存在 PostgreSQL，后台报送并支持中央轮询校准。内部 `/internal/task-tracking/*` 使用本服务专用凭据，供任务服务读取，不需要开放到公共代理。
+
+接入方式、凭据生成、owner 边界和恢复语义见同级 `task-service/README.md`。开启接入后创建的新任务会统一登记。
+
+任务跟踪存储统一使用 PostgreSQL 的 task_mgmt schema；启动前由 task-service 执行 Alembic 迁移。工具只维护 producer_* 表，中央任务状态仍通过 HTTP 上报；多实例使用领取锁和实例租约。表结构、配置和启动步骤见同级 task-service/docs/postgresql.md。
