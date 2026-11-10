@@ -33,7 +33,7 @@ class SettingsTest(unittest.TestCase):
         self.assertIsNone(settings.ocr.detection_model_dir)
         self.assertEqual(
             settings.llm.translation_url,
-            "http://127.0.0.1:5051/api/inference/qwen_translate",
+            "http://127.0.0.1:5051/v1/chat/completions",
         )
         self.assertTrue(settings.prompts.translate_zh_en.endswith("\n"))
         self.assertIn("English", settings.prompts.translate_any_en)

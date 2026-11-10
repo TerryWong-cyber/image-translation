@@ -214,11 +214,9 @@ class HttpSettings:
 @dataclass(frozen=True)
 class LlmSettings:
     api_base_url: str
-    legacy_api_base_url: str
-    translation_endpoint: str
-    legacy_inference_endpoint: str
-    recognition_endpoint: str
-    recognition_batch_endpoint: str
+    model: str
+    api_key: str
+    chat_endpoint: str
     translation_timeout_seconds: float
     recognition_timeout_seconds: float
     max_new_tokens: int
@@ -226,19 +224,15 @@ class LlmSettings:
 
     @property
     def translation_url(self) -> str:
-        return _url(self.api_base_url, self.translation_endpoint)
-
-    @property
-    def legacy_inference_url(self) -> str:
-        return _url(self.legacy_api_base_url, self.legacy_inference_endpoint)
+        return _url(self.api_base_url, self.chat_endpoint)
 
     @property
     def recognition_url(self) -> str:
-        return _url(self.api_base_url, self.recognition_endpoint)
+        return _url(self.api_base_url, self.chat_endpoint)
 
     @property
     def recognition_batch_url(self) -> str:
-        return _url(self.api_base_url, self.recognition_batch_endpoint)
+        return _url(self.api_base_url, self.chat_endpoint)
 
 
 @dataclass(frozen=True)
@@ -626,11 +620,9 @@ def get_settings() -> Settings:
         ),
         llm=LlmSettings(
             api_base_url=_absolute_url(env, "LLM_API_BASE_URL"),
-            legacy_api_base_url=_absolute_url(env, "LLM_LEGACY_API_BASE_URL"),
-            translation_endpoint=_route(env, "LLM_TRANSLATION_ENDPOINT"),
-            legacy_inference_endpoint=_route(env, "LLM_LEGACY_INFERENCE_ENDPOINT"),
-            recognition_endpoint=_route(env, "LLM_RECOGNITION_ENDPOINT"),
-            recognition_batch_endpoint=_route(env, "LLM_RECOGNITION_BATCH_ENDPOINT"),
+            model=env.get("LLM_MODEL", "gemma4-26b-a4b").strip() or "gemma4-26b-a4b",
+            api_key=env.get("LLM_API_KEY", "").strip(),
+            chat_endpoint=_route({"LLM_CHAT_ENDPOINT": env.get("LLM_CHAT_ENDPOINT", "/v1/chat/completions")}, "LLM_CHAT_ENDPOINT"),
             translation_timeout_seconds=_float(env, "LLM_TRANSLATION_TIMEOUT_SECONDS"),
             recognition_timeout_seconds=_float(env, "LLM_RECOGNITION_TIMEOUT_SECONDS"),
             max_new_tokens=_int(env, "LLM_MAX_NEW_TOKENS", minimum=1),

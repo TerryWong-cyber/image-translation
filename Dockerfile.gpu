@@ -30,11 +30,19 @@ COPY pyproject.toml README.md server.py ./
 COPY src ./src
 COPY configs ./configs
 
+# Install the pinned Linux wheel directly so the default build does not depend on the Paddle index.
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --upgrade pip \
-    && python -m pip install \
-        "paddlepaddle-gpu==${PADDLE_VERSION}" \
-        --extra-index-url "${PADDLE_INDEX_URL}" \
+    && if [ "${PADDLE_VERSION}" = "3.3.0" ] \
+        && [ "${PADDLE_INDEX_URL}" = "https://www.paddlepaddle.org.cn/packages/stable/cu130/" ] \
+        && [ "$(uname -m)" = "x86_64" ]; then \
+        python -m pip install \
+            "https://paddle-whl.bj.bcebos.com/stable/cu130/paddlepaddle-gpu/paddlepaddle_gpu-3.3.0-cp310-cp310-linux_x86_64.whl"; \
+    else \
+        python -m pip install \
+            "paddlepaddle-gpu==${PADDLE_VERSION}" \
+            --extra-index-url "${PADDLE_INDEX_URL}"; \
+    fi \
     && python -m pip install ".[gpu]" \
     && python -m pip check
 

@@ -5,6 +5,8 @@ URLs are opaque bearer credentials; keep file_id for renewal, never OSS location
 Uploads are not retried: the service has no idempotency key support.
 """
 
+from .service_identity import user_headers
+
 import asyncio
 import json
 import mimetypes
@@ -83,7 +85,7 @@ class FileServiceClient:
 
     def headers(self):
         token = self.settings.token.get_secret_value()
-        return {"Authorization": "Bearer " + token} if token else {}
+        return user_headers({"Authorization": "Bearer " + token} if token else {})
 
     @staticmethod
     def decode(response):

@@ -1,6 +1,6 @@
 import re
 
-from image_translation.clients.llm_client import request_model, validate_responses
+from image_translation.clients.llm_client import request_chat_batch, validate_responses
 
 from image_translation.components.text_box.text_format import cal_sentence_char_len, split_translated_texts
 from image_translation.config import get_settings
@@ -11,36 +11,11 @@ def call_inference_api_v2(
     prompt, texts_to_translate, max_new_tokens=None, batch_size=None, timeout=None, url=None
 ):
     settings = get_settings().llm
-    max_new_tokens = max_new_tokens or settings.max_new_tokens
-    batch_size = batch_size or settings.batch_size
-    timeout = timeout or settings.translation_timeout_seconds
-    url = url or settings.translation_url
-    data = {
-        "texts_to_translate": texts_to_translate,
-        "translate_prompt": prompt,
-    }
-    return request_model(url, data, timeout, len(texts_to_translate))
-
-
-def call_inference_api(
-    prompts, max_new_tokens=None, top_k=50, temperature=0, num_beams=1, diversity_penalty=0.0,
-    batch_size=None, timeout=None, url=None
-):
-    settings = get_settings().llm
-    max_new_tokens = max_new_tokens or settings.max_new_tokens
-    batch_size = batch_size or settings.batch_size
-    timeout = timeout or settings.translation_timeout_seconds
-    url = url or settings.legacy_inference_url
-    data = {
-        "prompts": prompts,
-        "max_new_tokens": max_new_tokens,
-        "top_k": top_k,
-        "temperature": temperature,
-        "num_beams": num_beams,
-        "diversity_penalty": diversity_penalty,
-        "batch_size": batch_size
-    }
-    return request_model(url, data, timeout, len(prompts))
+    return request_chat_batch(
+        url or settings.translation_url, [prompt + text for text in texts_to_translate],
+        timeout or settings.translation_timeout_seconds, model=settings.model, api_key=settings.api_key,
+        max_tokens=max_new_tokens or settings.max_new_tokens, batch_size=batch_size or settings.batch_size,
+    )
 
 
 def normalize_text(text: str) -> str:
@@ -82,9 +57,6 @@ def llm_translate(batch_agg_box_ids, batch_aggregated_texts, context, batch_size
     prompt = translation_prompt(settings.prompts, language)
 
     max_new_tokens = settings.llm.max_new_tokens
-    # prompts = [prompt + text for text in batch_aggregated_texts]
-
-    # llm_res = call_inference_api(prompts=prompts, max_new_tokens=max_new_tokens, batch_size=batch_size)
     llm_res = call_inference_api_v2(prompt=prompt, texts_to_translate=batch_aggregated_texts,
                                     max_new_tokens=max_new_tokens, batch_size=batch_size)
 

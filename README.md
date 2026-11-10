@@ -391,6 +391,7 @@ changes require a restart. Uvicorn reload can be enabled locally with
 
 依赖新增 `python-multipart`，更新环境后重启 API。服务端 `FILE_SERVICE_BASE_URL`、
 `FILE_SERVICE_TOKEN`、`FILE_SERVICE_STORAGE_NAMESPACE` 沿用现有 File Service 配置。
+若上传返回 `401 invalid_service_identity`，检查运行中的图片翻译服务是否加载了与 File Service 一致的 `FILE_SERVICE_TOKEN`，以及 File Service 是否允许配置了服务 Token 的无用户调用（`FILE_SERVICE_LEGACY_USER_ID`）。生产 Compose 从 `.env.production` 注入变量，修改后用 `docker compose -f docker-compose.production.yml up -d --force-recreate --no-deps image-translation` 重建容器。
 不得把 Token 写入前端 VITE 变量。上传不重试；续签失败保留已创建的 `file_id`。
 原 `/llm/image-translate` 和 MCP 契约不变；网页专用可选 `file_id` 不扩展到原生协议。
 新接口沿用部署环境的网关访问控制，不另外提供用户登录或租户身份映射。
@@ -408,3 +409,7 @@ Nginx 将 `/translation/api/images/` 代理至 `http://192.168.3.67:8030/api/web
 接入方式、凭据生成、owner 边界和恢复语义见同级 `task-service/README.md`。开启接入后创建的新任务会统一登记。
 
 任务跟踪存储统一使用 PostgreSQL 的 task_mgmt schema；启动前由 task-service 执行 Alembic 迁移。工具只维护 producer_* 表，中央任务状态仍通过 HTTP 上报；多实例使用领取锁和实例租约。表结构、配置和启动步骤见同级 task-service/docs/postgresql.md。
+
+### Model Harbor chat API
+
+Translation and OCR recognition call `LLM_API_BASE_URL` + `/v1/chat/completions` (override the path with `LLM_CHAT_ENDPOINT`). Set `LLM_MODEL` to a registered multimodal model; the default is `gemma4-26b-a4b`. Set `LLM_API_KEY` when the gateway requires bearer authentication. Requests explicitly disable thinking and streaming. Each text or image is a separate request; `LLM_BATCH_SIZE` bounds concurrent calls and results retain their input order. Truncated, empty or failed responses fail the job. Existing legacy endpoint settings are ignored. Deploy this client before removing the old gateway endpoints. The Gemma route and image support must be enabled in the deployed gateway and engine.

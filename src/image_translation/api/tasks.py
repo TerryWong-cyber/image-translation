@@ -1,5 +1,6 @@
 """Browser asynchronous adapter; existing synchronous REST/MCP contracts remain valid."""
 import asyncio
+from image_translation.clients.service_identity import delegated_user_id
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -42,7 +43,7 @@ def create_task_router(translate_handler):
             if jobs[key]["status"] in {"succeeded", "failed", "cancelled"} and (now - jobs[key]["created"] > 3600 or len(jobs) >= 256):
                 del jobs[key]
         native_id = str(uuid4())
-        job = {"id": native_id, "task_id": tracking.identifier(native_id) if tracking.enabled else None,
+        job = {"access_scope": delegated_user_id(), "id": native_id, "task_id": tracking.identifier(native_id) if tracking.enabled else None,
                "status": "queued", "result": None, "error": None, "created": now}
         jobs[native_id] = job
         await asyncio.to_thread(tracking.start, native_id, "图片翻译", queued=True)
@@ -87,13 +88,13 @@ def create_task_router(translate_handler):
         task = asyncio.create_task(execute(), name="image-translation-" + native_id)
         running.add(task)
         task.add_done_callback(running.discard)
-        return {key: value for key, value in job.items() if key != "created"}
+        return {key: value for key, value in job.items() if key not in {"created", "access_scope"}}
 
     @router.get("/{native_id}")
     async def get_task(native_id: str):
         job = jobs.get(native_id)
-        if job is None:
+        if job is None or job["access_scope"] != delegated_user_id():
             raise HTTPException(404, "image task expired or service restarted; use the central task list")
-        return {key: value for key, value in job.items() if key != "created"}
+        return {key: value for key, value in job.items() if key not in {"created", "access_scope"}}
 
     return router

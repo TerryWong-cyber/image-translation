@@ -7,6 +7,7 @@ by task-service Alembic migrations. Snapshots and pending delivery commit togeth
 from __future__ import annotations
 
 import asyncio
+from .service_identity import delegated_user_id, user_scope, authenticated_user, UserContextMiddleware
 import functools
 import hashlib
 import inspect
@@ -229,7 +230,8 @@ class Tracker:
         self.provider = provider
         self.base = os.getenv("TASK_SERVICE_BASE_URL", "").rstrip("/")
         self.token = os.getenv("TASK_SERVICE_TOKEN", "")
-        self.owner = os.getenv("TASK_SERVICE_OWNER_ID", "local")
+        self.default_owner = os.getenv("TASK_SERVICE_OWNER_ID", "local")
+        self._owners = {self.default_owner}
         self.context_token = os.getenv("TASK_SERVICE_CONTEXT_TOKEN", "")
         self.enabled = bool(self.base)
         self.database_url = os.getenv("TASK_SERVICE_DATABASE_URL", "")
@@ -247,6 +249,14 @@ class Tracker:
         self._thread = None
 
     @property
+    def owner(self):
+        return delegated_user_id() or self.default_owner
+
+    @property
+    def lease_id(self):
+        return uuid5(self.instance_id, self.owner)
+
+    @property
     def engine(self):
         with self._lock:
             if self._pid != os.getpid():
@@ -259,8 +269,8 @@ class Tracker:
                 self._engine = build_engine(self.database_url, "task-producer:" + self.provider)
             return self._engine
 
-    def _where(self, table, native_id=None):
-        clause = (table.c.owner == self.owner) & (table.c.provider == self.provider)
+    def _where(self, table, native_id=None, owner=None):
+        clause = (table.c.owner == (owner or self.owner)) & (table.c.provider == self.provider)
         return clause if native_id is None else clause & (table.c.native_id == str(native_id))
 
     def _provider_lock(self, connection):
@@ -278,7 +288,7 @@ class Tracker:
         connection.execute(
             insert(producer_instances)
             .values(
-                id=self.instance_id,
+                id=self.lease_id,
                 owner=self.owner,
                 provider=self.provider,
                 heartbeat_at=now,
@@ -336,10 +346,10 @@ class Tracker:
         )
         connection.execute(
             insert(producer_snapshots)
-            .values(**values, status=status, instance_id=self.instance_id)
+            .values(**values, status=status, instance_id=self.lease_id)
             .on_conflict_do_update(
                 index_elements=["owner", "provider", "native_id"],
-                set_={**values, "status": status, "instance_id": self.instance_id},
+                set_={**values, "status": status, "instance_id": self.lease_id},
             )
         )
         connection.execute(
@@ -361,6 +371,8 @@ class Tracker:
     def write(self, native_id, status, title=None, result=None, error=None):
         if not self.enabled:
             return
+        with self._lock:
+            self._owners.add(self.owner)
         with self.engine.begin() as connection:
             self._provider_lock(connection)
             self._heartbeat(connection)
@@ -428,10 +440,14 @@ class Tracker:
         trusted = bool(self.context_token) and secrets.compare_digest(supplied, self.context_token)
         parent = headers.get("x-task-parent", "") if trusted else ""
         conversation = headers.get("x-task-conversation", "") if trusted else ""
+        owner = delegated_user_id()
+        if headers.get("x-user-id") is not None and owner != headers.get("x-user-id"):
+            owner = authenticated_user(headers, os.getenv("INTERNAL_SERVICE_TOKEN", "") or self.token)
         a = _parent.set(parent if parent.startswith("task_") and len(parent) <= 80 else None)
         b = _conversation.set(conversation[:200] or None)
         try:
-            yield
+            with user_scope(owner):
+                yield
         finally:
             _parent.reset(a)
             _conversation.reset(b)
@@ -443,7 +459,7 @@ class Tracker:
                 connection.execute(
                     sa.select(producer_outbox)
                     .where(
-                        self._where(producer_outbox),
+                        producer_outbox.c.provider == self.provider,
                         producer_outbox.c.next_attempt_at <= sa.func.clock_timestamp(),
                         sa.or_(
                             producer_outbox.c.claimed_until.is_(None),
@@ -460,7 +476,7 @@ class Tracker:
             for row in rows:
                 connection.execute(
                     sa.update(producer_outbox)
-                    .where(self._where(producer_outbox, row["native_id"]))
+                    .where(self._where(producer_outbox, row["native_id"], row["owner"]))
                     .values(
                         claimed_by=claim,
                         claimed_until=sa.func.clock_timestamp() + sa.text("interval '300 seconds'"),
@@ -487,6 +503,7 @@ class Tracker:
                     headers={
                         "Authorization": "Bearer " + self.token,
                         "Content-Type": "application/json",
+                        "X-User-ID": row["owner"],
                     },
                     method="POST",
                 )
@@ -498,7 +515,7 @@ class Tracker:
                     pass
                 with self.engine.begin() as connection:
                     condition = sa.and_(
-                        self._where(producer_outbox, row["native_id"]),
+                        self._where(producer_outbox, row["native_id"], row["owner"]),
                         producer_outbox.c.version == row["version"],
                         producer_outbox.c.claimed_by == claim,
                     )
@@ -528,7 +545,7 @@ class Tracker:
                 connection.execute(
                     sa.update(producer_outbox)
                     .where(
-                        self._where(producer_outbox),
+                        producer_outbox.c.provider == self.provider,
                         producer_outbox.c.claimed_by == claim,
                     )
                     .values(claimed_by=None, claimed_until=None)
@@ -536,6 +553,18 @@ class Tracker:
         return sent
 
     def renew_and_recover(self):
+        with self.engine.connect() as connection:
+            owners = set(connection.execute(sa.select(producer_snapshots.c.owner).where(
+                producer_snapshots.c.provider == self.provider,
+                producer_snapshots.c.status.in_(["queued", "running"]),
+            ).distinct()).scalars())
+        with self._lock:
+            owners.update(self._owners)
+        for owner in sorted(owners):
+            with user_scope(owner):
+                self._renew_owner()
+
+    def _renew_owner(self):
         with self.engine.begin() as connection:
             self._provider_lock(connection)
             self._heartbeat(connection)
@@ -612,12 +641,18 @@ class Tracker:
             self._thread = None
         if self.enabled and self._engine is not None:
             with self.engine.begin() as connection:
-                self._provider_lock(connection)
-                self._heartbeat(connection, stopping=True)
+                with self._lock:
+                    owners = tuple(self._owners)
+                for owner in sorted(owners):
+                    with user_scope(owner):
+                        self._provider_lock(connection)
+                        self._heartbeat(connection, stopping=True)
             self._engine.dispose()
         # Pending PostgreSQL rows survive process exit; execution recovery uses leases.
 
-    def install(self, app):
+    def install(self, app, *, user_auth=True):
+        if user_auth:
+            app.add_middleware(UserContextMiddleware, token=lambda scope: self.token if scope["path"].startswith("/internal/task-tracking/") else os.getenv("INTERNAL_SERVICE_TOKEN", "") or self.token)
         if not self.enabled:
             return
         from fastapi import HTTPException
@@ -632,7 +667,12 @@ class Tracker:
                 request.headers.get("authorization", ""), "Bearer " + self.token
             ):
                 raise HTTPException(401, "invalid tracking credential")
-            result = self.get(native_id)
+            try:
+                owner = authenticated_user(request.headers, self.token)
+            except (PermissionError, ValueError) as exc:
+                raise HTTPException(401, "invalid service identity") from exc
+            with user_scope(owner):
+                result = self.get(native_id)
             if result is None:
                 raise HTTPException(404, "tracking snapshot unavailable")
             return result

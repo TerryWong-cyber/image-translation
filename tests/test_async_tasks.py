@@ -88,3 +88,27 @@ def test_async_rejects_failed_json_response_without_exposing_details():
             time.sleep(.01)
         assert job["status"] == "failed"
         assert "secret-upstream-key" not in str(job)
+
+
+def test_delegated_async_job_retains_owner_and_blocks_other_users():
+    from image_translation.clients.service_identity import UserContextMiddleware, current_user_id
+    seen=[]
+    async def translate(body, request):
+        await asyncio.sleep(.01)
+        seen.append(current_user_id())
+        return TranslationResult(status="success", request_id="scoped",source_url="https://files.test/a",translated_url="https://files.test/b",source_files=[],files=[],data=[],duration_ms=1)
+    app=FastAPI()
+    app.add_middleware(UserContextMiddleware,token=lambda scope:"internal-test")
+    app.include_router(create_task_router(translate))
+    def headers(user): return {"Authorization":"Bearer internal-test","X-User-ID":user}
+    with TestClient(app) as client:
+        result=client.post("/api/web/images/tasks",headers=headers("alice"),json={"image_url":"https://images.test/a.png"})
+        assert result.status_code == 202,result.text
+        path="/api/web/images/tasks/"+result.json()["id"]
+        assert client.get(path,headers=headers("bob")).status_code == 404
+        for _ in range(100):
+            response=client.get(path,headers=headers("alice"))
+            if response.json()["status"] == "succeeded": break
+            time.sleep(.01)
+        assert response.json()["status"] == "succeeded"
+    assert seen == ["alice"]
